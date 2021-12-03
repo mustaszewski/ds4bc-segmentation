@@ -3,9 +3,40 @@ title: "R Notebook"
 output: html_notebook
 ---
 
+# Customer Segmentation Group work
+
+## Instructions
+- Imagine you and your team mates have just founded a Data Science start up. Your first customer is a fundraising organization asking for support with regard to making most of their donor and transaction data.
+- The Head of Fund Development who is your direct counterpart and project sponsor asks your team to come up with a segmentation of the donor base as quickly as possible. The manager has a basic understanding of RFM modelling and tells you that there was a simple model in use some years ago which was neither updated nor further developed.
+- In general, your client organization is model-agnostic and trusts your judgment and consulting. However, the let you know that seeing alternative approaches in action together with your reflection, expertise and concluding recommendation how to process would be great ...
+- The clients finally provide you with a flat file together with a list of feature descriptions ...
+
+### Tasks
+- Form a group of 3 to 4 persons
+- Get accustomed to the data and have an explorative look at it.
+- Think your variables that might be added to or derived from the dataset with relative ease, e.g. conducting some research, data enrichment etc. 
+- Take those down and formulate recommendations towards the client.
+- If you find time and a viable data source, you may of course go ahead and enrich the dataset
+- Apply at least two customer segmentation approaches to the provided data
+- Model examples: RFM, k-Means-Algorithm
+- Summarize the segmentation generated results and derived insights
+- Compare the model outputs and formulate a recommendation for the customer
+
+### Expected Output
+- Deliverable: Pitch presentation
+- Deadline: December 17th, 2021
+
+## Prepro
 ```{r}
 library(tidyverse)
 ```
+
+```{r}
+feature_description_original <- readxl::read_excel(
+  "data/feature_description.xlsx")
+feature_description_original
+```
+
 
 
 ```{r}
@@ -17,7 +48,7 @@ customer_segmentation_raw <- read_csv2(
                 col_double(), col_character(), col_double(), col_double(), col_character(),
                 col_character(), col_character()),
   guess_max = 400000
-) |> mutate(
+) %>% mutate(
   `Date of Birth` = lubridate::dmy(`Date of Birth`),
   Gender = as.factor(Gender),
   Postcode = as.factor(Postcode),
@@ -28,7 +59,83 @@ customer_segmentation_raw <- read_csv2(
   MERCHANDISE2019 = as.factor(MERCHANDISE2019),
   LastPaymentDate = lubridate::dmy(LastPaymentDate),
   PenultimatePaymentDate = lubridate::dmy(PenultimatePaymentDate)
-) |> select(-c(MERCHANDIESE2017, MERCHANDIESE2018))
+) %>% select(-c(MERCHANDIESE2017, MERCHANDIESE2018)) %>% 
+  rename(DateOfBirth = `Date of Birth`,
+         ID =`Customer Number`)
 
 skimr::skim(customer_segmentation_raw)
 ```
+
+### feature engineering
+
+Bin hier sehr offen für Verbesserungsvorschläge ^^
+
+```{r}
+# here we define, which months should be understood as "christmas monts" to define "XMAS_donation"
+XMAS_months = c(11,
+                12,
+                1)
+
+
+customer_segmentation_first_prepro <- customer_segmentation_raw %>% 
+  mutate(
+    # year of customer's birthday
+    year_born = lubridate::year(DateOfBirth),
+    # total number of donations over all years     
+    COUNTtotal = COUNT2015+ 
+                COUNT2016+
+                COUNT2017+
+                COUNT2018+
+                COUNT2019,
+    # total donation amount over all years     
+    SUMtotal = SUM2015+ 
+              SUM2016+
+              SUM2017+
+              SUM2018+
+              SUM2019, 
+    # average donation amount     
+    SUMaverage = SUMtotal/COUNTtotal,
+    # month of the last payment
+    LastPaymentMONTH = lubridate::month(LastPaymentDate),
+    # month of second to last payment 
+    PenultimatePaymentMONTH = lubridate::month(PenultimatePaymentDate),
+    
+    # THIS ONE NEEDS WORK
+    # status as christmas donor if the last two payments were around christmas, 
+    # but we have to tweak the time interval (is Nov to Jan too large?)
+    # also: what about people that only have one payment in total, that should be considered. The "maybe" status is shady at best
+    
+    XMAS_donor = as_factor(case_when(LastPaymentMONTH %in% XMAS_months & PenultimatePaymentMONTH %in% XMAS_months ~ "yes", 
+                                   LastPaymentMONTH %in% XMAS_months ~ "maybe")),
+    # days between last and second to last payment
+    donation_interval = lubridate::day(lubridate::days(LastPaymentDate - PenultimatePaymentDate)),
+    # binary factor variable expressing if any merchandise was bought over the observation period (clumsily coded)
+    merchandise_any = as_factor(if_else(!is.na(MERCHANDISE2015) & MERCHANDISE2015 != 0 |
+                                       !is.na(MERCHANDISE2016) & MERCHANDISE2016 != 0 |
+                                !is.na(MERCHANDISE2017) & MERCHANDISE2017 != 0 |
+                                !is.na(MERCHANDISE2018) & MERCHANDISE2018 != 0 |
+                                !is.na(MERCHANDISE2019) & MERCHANDISE2019 != 0,
+                                       1,
+                                       0))) %>% 
+  group_by(ID) %>% # grouping for the next mutation (num_of_donation_years)
+  # number of years in which anything was donated (0-5)
+  mutate(num_of_donation_years = sum(COUNT2015 != 0,
+                                      COUNT2016 != 0,
+                                      COUNT2017 != 0,
+                                      COUNT2018 != 0,
+                                      COUNT2019 != 0, na.rm=T)) %>% 
+  # ungrouping is important! ;)
+  # I learned that skimr tries to show its output based on groups if working with a grouped dataset... that crashed my computer twice ^^
+  ungroup() 
+```
+
+
+
+
+```{r}
+customer_segmentation_first_prepro %>% skimr::skim()
+```
+
+
+
+
