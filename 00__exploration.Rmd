@@ -71,7 +71,7 @@ skimr::skim(customer_segmentation_raw)
 Bin hier sehr offen für Verbesserungsvorschläge ^^
 
 ```{r}
-# here we define, which months should be understood as "christmas monts" to define "XMAS_donation"
+# here we define, which months should be understood as "christmas months" to define "XMAS_donation"
 XMAS_months = c(11,
                 12,
                 1)
@@ -137,5 +137,32 @@ customer_segmentation_first_prepro %>% skimr::skim()
 ```
 
 
+```{r}
+#Maybe it's a good idea to take out all the NAs for age. Obviously we lose a lot of rows, but 251000 left still seems plenty to me. 
 
+customer_segmentation_complete <- customer_segmentation_first_prepro %>% drop_na(year_born)
+
+View(customer_segmentation_complete)
+```
+
+
+```{r}
+# Let's change the dates to ages. This is a very crude way of implementing it though.
+
+customer_segmentation_complete$age_years <- (2021 - customer_segmentation_complete$year_born)
+
+View(customer_segmentation_complete)
+skimr::skim(customer_segmentation_complete)
+
+# We can see that the data is probably not perfect, because we have donors that are 6 years old up to 119, which both seem a bit unlikely. 
+```
+```{r}
+# Let's try RFM:
+
+#install.packages("rfm")
+
+# We need: Recency(LastPaymontMONTH must be transformed to days), Frequency (COUNTtotal), Monetary(SUMtotal)
+
+ 
+```
 
