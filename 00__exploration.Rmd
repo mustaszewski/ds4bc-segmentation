@@ -101,10 +101,26 @@ XMAS_months = c(11,
                 12,
                 1)
 
+# this date will be used as the reference for this analysis
+reference_date <- lubridate::ymd("2021-12-17")
+
 customer_segmentation_first_prepro <- customer_segmentation_with_zip %>%
   mutate(
     # year of customer's birthday
     year_born = lubridate::year(DateOfBirth),
+    
+    # age of donors at their last donation
+    age_at_last_donation = lubridate::interval(DateOfBirth, LastPaymentDate) %>%
+      as.numeric("years") %>%
+      as.integer(),
+    
+    generation_moniker = case_when(
+      year_born <= 1945 ~ "silent" ,
+      year_born <= 1964 ~ "boomer",
+      year_born <= 1980 ~ "x",
+      year_born <= 1996 ~ "millennial",
+      year_born <= 2012 ~ "z"
+    ) %>% as_factor(),
 
     # total number of donations over all years
     COUNTtotal = COUNT2015+
@@ -145,6 +161,11 @@ customer_segmentation_first_prepro <- customer_segmentation_with_zip %>%
 
     # days between last and second to last payment
     donation_interval = lubridate::day(lubridate::days(LastPaymentDate - PenultimatePaymentDate)),
+    
+    # days since the last payment in relation to our reference date
+    days_since_last_payment = lubridate::interval(LastPaymentDate, reference_date) %>%
+      as.numeric("days") %>%
+      as.integer(),
 
     # binary factor variable expressing if any merchandise was bought over the observation period (clumsily coded)
     merchandise_any = as_factor(if_else(
@@ -184,14 +205,6 @@ customer_segmentation_complete <- customer_segmentation_first_prepro %>% drop_na
 customer_segmentation_complete
 ```
 
-```{r}
-# Let's change the dates to ages. This is a very crude way of implementing it though.
-customer_segmentation_complete$age_years <- (2021 - customer_segmentation_complete$year_born)
-
-# We can see that the data is probably not perfect, because we have donors that are 6 years old up to 119, which both seem a bit unlikely.
-skimr::skim(customer_segmentation_complete)
-```
-
 ### Visual Exploration
 
 ```{r}
@@ -203,7 +216,12 @@ ggplot(customer_segmentation_first_prepro, aes(XMAS_donor)) +
 ```{r}
 ggplot(customer_segmentation_first_prepro, aes(num_of_donation_years)) +
   geom_bar() +
-  facet_wrap(~Gender)
+  facet_wrap(~generation_moniker)
+```
+
+```{r}
+ggplot(customer_segmentation_first_prepro %>% drop_na(age_at_last_donation), aes(age_at_last_donation)) +
+  geom_histogram(binwidth = 5)
 ```
 
 ```{r}
@@ -274,6 +292,11 @@ donors_per_state_per_100_000_inhabitants <- customer_segmentation_first_prepro %
 
 ggplot(donors_per_state_per_100_000_inhabitants, aes(Bundesland, n)) +
   geom_col()
+```
+
+```{r}
+ggplot(customer_segmentation_first_prepro, aes(days_since_last_payment)) +
+  geom_histogram(binwidth = 30)
 ```
 
 ```{r}
