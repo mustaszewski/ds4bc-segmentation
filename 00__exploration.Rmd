@@ -6,17 +6,29 @@ output: html_notebook
 # Customer Segmentation Group work
 
 ## Instructions
-- Imagine you and your team mates have just founded a Data Science start up. Your first customer is a fundraising organization asking for support with regard to making most of their donor and transaction data.
-- The Head of Fund Development who is your direct counterpart and project sponsor asks your team to come up with a segmentation of the donor base as quickly as possible. The manager has a basic understanding of RFM modelling and tells you that there was a simple model in use some years ago which was neither updated nor further developed.
-- In general, your client organization is model-agnostic and trusts your judgment and consulting. However, the let you know that seeing alternative approaches in action together with your reflection, expertise and concluding recommendation how to process would be great ...
-- The clients finally provide you with a flat file together with a list of feature descriptions ...
+- Imagine you and your team mates have just founded a Data Science start up. Your
+  first customer is a fundraising organization asking for support with regard to
+  making most of their donor and transaction data.
+- The Head of Fund Development who is your direct counterpart and project sponsor
+  asks your team to come up with a segmentation of the donor base as quickly as
+  possible. The manager has a basic understanding of RFM modelling and tells you
+  that there was a simple model in use some years ago which was neither updated nor
+  further developed.
+- In general, your client organization is model-agnostic and trusts your judgment
+  and consulting. However, the let you know that seeing alternative approaches in
+  action together with your reflection, expertise and concluding recommendation
+  how to process would be great ...
+- The clients finally provide you with a flat file together with a list of
+  feature descriptions ...
 
 ### Tasks
 - Form a group of 3 to 4 persons
 - Get accustomed to the data and have an explorative look at it.
-- Think your variables that might be added to or derived from the dataset with relative ease, e.g. conducting some research, data enrichment etc. 
+- Think your variables that might be added to or derived from the dataset with
+  relative ease, e.g. conducting some research, data enrichment etc. 
 - Take those down and formulate recommendations towards the client.
-- If you find time and a viable data source, you may of course go ahead and enrich the dataset
+- If you find time and a viable data source, you may of course go ahead and
+  enrich the dataset
 - Apply at least two customer segmentation approaches to the provided data
 - Model examples: RFM, k-Means-Algorithm
 - Summarize the segmentation generated results and derived insights
@@ -37,8 +49,6 @@ feature_description_original <- readxl::read_excel(
 feature_description_original
 ```
 
-
-
 ```{r}
 customer_segmentation_raw <- read_csv2(
   "data/customer_segmentation_test.csv",
@@ -51,7 +61,6 @@ customer_segmentation_raw <- read_csv2(
 ) %>% mutate(
   `Date of Birth` = lubridate::dmy(`Date of Birth`),
   Gender = as.factor(Gender),
-  Postcode = as.factor(Postcode),
   MERCHANDISE2015 = as.factor(MERCHANDISE2015),
   MERCHANDISE2016 = as.factor(MERCHANDISE2016),
   MERCHANDISE2017 = as.factor(MERCHANDIESE2017),
@@ -71,71 +80,184 @@ skimr::skim(customer_segmentation_raw)
 Bin hier sehr offen für Verbesserungsvorschläge ^^
 
 ```{r}
+zip_code_list <- readxl::read_excel("data/PLZ_Verzeichnis-20211201.xls")
+zip_code_list
+```
+
+```{r}
+customer_segmentation_with_zip <- customer_segmentation_raw %>%
+  left_join(zip_code_list, by = c("Postcode" = "PLZ")) %>%
+  select(-c(`gültig ab`, `gültig bis`, NamePLZTyp, intern_extern, adressierbar, Postfach)) %>%
+  drop_na(Postcode, Ort, Bundesland) %>%
+  mutate(Postcode = as.factor(Postcode),
+         Bundesland = as.factor(Bundesland))
+
+customer_segmentation_with_zip
+```
+
+
+```{r}
 # here we define, which months should be understood as "christmas monts" to define "XMAS_donation"
 XMAS_months = c(11,
                 12,
                 1)
 
-
-customer_segmentation_first_prepro <- customer_segmentation_raw %>% 
+customer_segmentation_first_prepro <- customer_segmentation_with_zip %>% 
   mutate(
     # year of customer's birthday
     year_born = lubridate::year(DateOfBirth),
+    
     # total number of donations over all years     
     COUNTtotal = COUNT2015+ 
-                COUNT2016+
-                COUNT2017+
-                COUNT2018+
-                COUNT2019,
+                 COUNT2016+
+                 COUNT2017+
+                 COUNT2018+
+                 COUNT2019,
+    
     # total donation amount over all years     
     SUMtotal = SUM2015+ 
-              SUM2016+
-              SUM2017+
-              SUM2018+
-              SUM2019, 
+               SUM2016+
+               SUM2017+
+               SUM2018+
+               SUM2019, 
+    
     # average donation amount     
-    SUMaverage = SUMtotal/COUNTtotal,
+    SUMaverage = SUMtotal / COUNTtotal,
+    
     # month of the last payment
-    LastPaymentMONTH = lubridate::month(LastPaymentDate),
+    LastPaymentMONTH = lubridate::month(LastPaymentDate) %>% as.factor(),
+    
     # month of second to last payment 
-    PenultimatePaymentMONTH = lubridate::month(PenultimatePaymentDate),
+    PenultimatePaymentMONTH = lubridate::month(PenultimatePaymentDate) %>% as.factor(),
+    
+    # year of the last payment
+    LastPaymentYEAR = lubridate::year(LastPaymentDate),
+    
+    # year of second to last payment 
+    PenultimatePaymentYEAR = lubridate::year(PenultimatePaymentDate),
     
     # THIS ONE NEEDS WORK
     # status as christmas donor if the last two payments were around christmas, 
     # but we have to tweak the time interval (is Nov to Jan too large?)
     # also: what about people that only have one payment in total, that should be considered. The "maybe" status is shady at best
-    
     XMAS_donor = as_factor(case_when(LastPaymentMONTH %in% XMAS_months & PenultimatePaymentMONTH %in% XMAS_months ~ "yes", 
-                                   LastPaymentMONTH %in% XMAS_months ~ "maybe")),
+                                     LastPaymentMONTH %in% XMAS_months ~ "maybe",
+                                     TRUE ~ "unlikely")),
+    
     # days between last and second to last payment
     donation_interval = lubridate::day(lubridate::days(LastPaymentDate - PenultimatePaymentDate)),
+    
     # binary factor variable expressing if any merchandise was bought over the observation period (clumsily coded)
-    merchandise_any = as_factor(if_else(!is.na(MERCHANDISE2015) & MERCHANDISE2015 != 0 |
-                                       !is.na(MERCHANDISE2016) & MERCHANDISE2016 != 0 |
-                                !is.na(MERCHANDISE2017) & MERCHANDISE2017 != 0 |
-                                !is.na(MERCHANDISE2018) & MERCHANDISE2018 != 0 |
-                                !is.na(MERCHANDISE2019) & MERCHANDISE2019 != 0,
-                                       1,
-                                       0))) %>% 
-  group_by(ID) %>% # grouping for the next mutation (num_of_donation_years)
+    merchandise_any = as_factor(if_else(
+                                  !is.na(MERCHANDISE2015) & MERCHANDISE2015 != 0 |
+                                  !is.na(MERCHANDISE2016) & MERCHANDISE2016 != 0 |
+                                  !is.na(MERCHANDISE2017) & MERCHANDISE2017 != 0 |
+                                  !is.na(MERCHANDISE2018) & MERCHANDISE2018 != 0 |
+                                  !is.na(MERCHANDISE2019) & MERCHANDISE2019 != 0,
+                                  1,
+                                  0))) %>% 
+  
+  # grouping for the next mutation (num_of_donation_years)
+  group_by(ID) %>%
+  
   # number of years in which anything was donated (0-5)
-  mutate(num_of_donation_years = sum(COUNT2015 != 0,
-                                      COUNT2016 != 0,
-                                      COUNT2017 != 0,
-                                      COUNT2018 != 0,
-                                      COUNT2019 != 0, na.rm=T)) %>% 
+  mutate(num_of_donation_years = sum(COUNT2015 > 0,
+                                     COUNT2016 > 0,
+                                     COUNT2017 > 0,
+                                     COUNT2018 > 0,
+                                     COUNT2019 > 0, na.rm=T)) %>% 
+  
   # ungrouping is important! ;)
   # I learned that skimr tries to show its output based on groups if working with a grouped dataset... that crashed my computer twice ^^
-  ungroup() 
+  ungroup() %>%
+  
+  # remove variables that have no further use or
+  select(-c(ID, DateOfBirth, LastPaymentDate, PenultimatePaymentDate))
 ```
-
-
-
 
 ```{r}
 customer_segmentation_first_prepro %>% skimr::skim()
 ```
+### Visual Exploration
 
+```{r}
+ggplot(customer_segmentation_first_prepro, aes(XMAS_donor)) +
+  geom_bar() +
+  facet_wrap(~Gender)
+```
 
+```{r}
+ggplot(customer_segmentation_first_prepro, aes(num_of_donation_years)) +
+  geom_bar() +
+  facet_wrap(~Gender)
+```
 
+```{r}
+ggplot(customer_segmentation_first_prepro %>% filter(SUMtotal > 0 & SUMtotal < 5000), aes(x = SUMtotal)) +
+  geom_histogram(binwidth = 100) +
+  facet_wrap(~Gender)
+```
 
+```{r}
+ggplot(customer_segmentation_first_prepro, aes(LastPaymentMONTH)) +
+  geom_bar() +
+  facet_wrap(~Gender)
+```
+
+```{r}
+ggplot(customer_segmentation_first_prepro, aes(PenultimatePaymentMONTH)) +
+  geom_bar() +
+  facet_wrap(~Gender)
+```
+
+```{r}
+ggplot(customer_segmentation_first_prepro %>% filter(COUNTtotal < (7 * 6)), aes(COUNTtotal)) +
+  geom_histogram(binwidth = 1)
+```
+```{r}
+ggplot(customer_segmentation_first_prepro %>% drop_na(donation_interval) %>% filter(donation_interval < (360 * 5)), aes(donation_interval)) +
+  geom_histogram(binwidth = 30)
+```
+
+```{r}
+mean_total_sum <- customer_segmentation_first_prepro$SUMtotal %>% mean(na.rm = TRUE)
+sd_total_sum <- customer_segmentation_first_prepro$SUMtotal %>% sd(na.rm = TRUE)
+
+ggplot(customer_segmentation_first_prepro %>% drop_na(year_born) %>% filter(SUMtotal < (mean_total_sum + sd_total_sum * 6)), aes(year_born, SUMtotal)) +
+  geom_point(alpha = 1 / 10)
+```
+
+```{r}
+# taken from https://de.statista.com/statistik/daten/studie/75396/umfrage/entwicklung-der-bevoelkerung-in-oesterreich-nach-bundesland-seit-1996/
+pop_vienna <- 1921153
+pop_lower_austria <- 1691040
+pop_upper_austria <- 1495756
+pop_styria <- 1247159
+pop_tyrol <- 760161
+pop_carithia <- 562230
+pop_salzburg <- 560643
+pop_vorarlberg <- 399164
+pop_burgenland <- 296040
+
+donors_per_state_per_100_000_inhabitants <- customer_segmentation_first_prepro %>%
+  select(Bundesland) %>%
+  group_by(Bundesland) %>%
+  count() %>%
+  ungroup() %>%
+  mutate(
+    n = case_when(
+      Bundesland == "B" ~ n / pop_burgenland * 100000,
+      Bundesland == "K" ~ n / pop_carithia * 100000,
+      Bundesland == "N" ~ n / pop_lower_austria * 100000,
+      Bundesland == "O" ~ n / pop_upper_austria * 100000,
+      Bundesland == "Sa" ~ n / pop_salzburg * 100000,
+      Bundesland == "St" ~ n / pop_styria * 100000,
+      Bundesland == "T" ~ n / pop_tyrol * 100000,
+      Bundesland == "V" ~ n / pop_vorarlberg * 100000,
+      Bundesland == "W" ~ n / pop_vienna * 100000
+    )
+  )
+
+ggplot(donors_per_state_per_100_000_inhabitants, aes(Bundesland, n)) +
+  geom_col()
+```
