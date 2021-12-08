@@ -1,6 +1,8 @@
 ---
 title: "R Notebook"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
 
 # Customer Segmentation Group work
@@ -163,9 +165,7 @@ customer_segmentation_first_prepro <- customer_segmentation_with_zip %>%
     donation_interval = lubridate::day(lubridate::days(LastPaymentDate - PenultimatePaymentDate)),
     
     # days since the last payment in relation to our reference date
-    days_since_last_payment = lubridate::interval(LastPaymentDate, reference_date) %>%
-      as.numeric("days") %>%
-      as.integer(),
+    days_since_last_payment = as.integer(LastPaymentDate - reference_date),
 
     # binary factor variable expressing if any merchandise was bought over the observation period (clumsily coded)
     merchandise_any = as_factor(if_else(
@@ -194,6 +194,12 @@ customer_segmentation_first_prepro <- customer_segmentation_with_zip %>%
   # remove variables that have no further use or
   select(-c(ID, DateOfBirth, LastPaymentDate, PenultimatePaymentDate))
 ```
+
+```{r}
+customer_segmentation_first_prepro
+```
+
+
 
 ```{r}
 customer_segmentation_first_prepro %>% skimr::skim()
@@ -299,10 +305,48 @@ ggplot(customer_segmentation_first_prepro, aes(days_since_last_payment)) +
   geom_histogram(binwidth = 30)
 ```
 
+### RFM
+
+RFM segments customers according to three variabless: Recency, Frequency, Monetary Value. Using the `rfm` package, RFM scores can be computed either on raw transaction data (one row per transaction), or on aggregated customer data (one row per customer). For the former, the function `rfm_table_order` can be used, for the latter either `rfm_table_customer` or `rfm_table_customer2`. Since our dataset represents aggregated customer data, the latter should be used. It can be computer directly from the raw data:
+
+
 ```{r}
-# Let's try RFM:
+library(rfm)
 
-#install.packages("rfm")
+rfm_scores <- customer_segmentation_raw %>%
+  # create new variables: total donation sum; total number of donations
+  mutate(SUMtotal = SUM2015 + SUM2016 + SUM2017 + SUM2018 + SUM2019,
+         COUNTtotal = COUNT2015 + COUNT2016 + COUNT2017 + COUNT2018 + COUNT2019,
+         LastPaymentDate = as.Date(LastPaymentDate)) %>%
+  # compute RFM scores
+  rfm_table_customer_2(customer_id = ID,
+                       n_transactions = COUNTtotal,
+                       latest_visit_date = LastPaymentDate,
+                       total_revenue = SUMtotal,
+                       analysis_date = reference_date)
 
-# We need: Recency(LastPaymontMONTH must be transformed to days), Frequency (COUNTtotal), Monetary(SUMtotal)
+rfm_scores
 ```
+
+Visual inspection of RFM scores:
+
+We can see that higher monetary values are characterized by higher donation frequencies and more recent donations. There is an obvious cluster of low monetary value for frequency values in [1,2] and recency in [1,3]. These might be 'sleepers', i.e. customers who donated only a few times and are not active donors any more.
+In the upper left corner, we see very unrecent customers who donated above average for this recency score. It might be wort focusing on them, since they could be "reactivated" as donors, since they showed above-average donation willingness among low-frequency donors.
+**Note:** The higher the recency score, the more recent the last transaction!
+
+```{r}
+rfm_heatmap(rfm_scores)
+```
+
+```{r}
+rfm_bar_chart(rfm_scores)
+```
+
+In the frequency vs monetary value plot below there is no strong correlation between donation frequency and monetary value. However, in the low-frequency area, there seems to be a slight positive correlation with monetary value.
+
+
+```{r}
+rfm_fm_plot(rfm_scores)
+```
+
+
