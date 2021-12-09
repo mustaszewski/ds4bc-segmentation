@@ -330,23 +330,115 @@ rfm_scores
 
 Visual inspection of RFM scores:
 
-We can see that higher monetary values are characterized by higher donation frequencies and more recent donations. There is an obvious cluster of low monetary value for frequency values in [1,2] and recency in [1,3]. These might be 'sleepers', i.e. customers who donated only a few times and are not active donors any more.
-In the upper left corner, we see very unrecent customers who donated above average for this recency score. It might be wort focusing on them, since they could be "reactivated" as donors, since they showed above-average donation willingness among low-frequency donors.
+We can see that higher monetary values are characterized by higher donation frequencies and more recent donations. There is an obvious cluster of low monetary value for frequency values in [1,2] and recency in [1,3]. These might be **lost donors**, i.e. customers who donated only a few times, obviously not active donors any more and thus unlikely do donate again in the future.
+In the upper left corner, we see very recent customers whowith low frequency (i.e. new donors) who donated sums above average for this recency score. It might be worth focusing on them, since they recently demonstrated above-average donation willingness. This segment may be calle **prospects**
+
+could be as donors, since they showed above-average donation willingness among low-frequency donors.
 **Note:** The higher the recency score, the more recent the last transaction!
 
 ```{r}
 rfm_heatmap(rfm_scores)
 ```
+The segmentation of customers is al follows:
 
 ```{r}
-rfm_bar_chart(rfm_scores)
+segment_names <- c("Champions", "Loyal Customers", "Potential Loyalist",
+  "New Customers", "Promising", "Need Attention", "About To Sleep",
+  "At Risk", "Can't Lose Them", "Lost")
+
+# We set the upper and lower bounds for recency, frequency, and monetary for the above segments
+recency_lower <- c(4, 2, 3, 4, 3, 2, 2, 1, 1, 1)
+recency_upper <- c(5, 5, 5, 5, 4, 3, 3, 2, 1, 2)
+frequency_lower <- c(4, 3, 1, 1, 1, 2, 1, 2, 4, 1)
+frequency_upper <- c(5, 5, 3, 1, 1, 3, 2, 5, 5, 2)
+monetary_lower <- c(4, 3, 1, 1, 1, 2, 1, 2, 4, 1)
+monetary_upper <- c(5, 5, 3, 1, 1, 3, 2, 5, 5, 2)
+
+# We use the segments and the bounds we previously established to group our users into different segments
+segment <- rfm_segment(rfm_scores,
+                       segment_names,
+                       recency_lower,
+                       recency_upper,
+                       frequency_lower, 
+                       frequency_upper, 
+                       monetary_lower,
+                       monetary_upper)
 ```
 
-In the frequency vs monetary value plot below there is no strong correlation between donation frequency and monetary value. However, in the low-frequency area, there seems to be a slight positive correlation with monetary value.
+```{r}
+segment %>% ggplot(aes(segment)) + 
+  geom_bar()
+```
+
+```{r}
+segment$segment %>% table() %>% prop.table() %>% round(3) %>% sort(decreasing = T)
+```
+
+Alternatively, I tried to define my own six segments based on the heatmap (note that this code throws an error):
+
+
+```{r eval=FALSE, include=FALSE}
+segment_names_2 <- c("Champs", "Regular average active", "Prospect", "Newcomer",
+                   "Don't loose", "Regular average at risk", "Lost")
+
+recency_lower_2 <-   c(4, 4, 5, 4, 1, 1, 1)
+recency_upper_2 <-   c(5, 5, 5, 4, 3, 3, 3)
+frequency_lower_2 <- c(4, 2, 1, 1, 5, 3, 1)
+frequency_upper_2 <- c(5, 3, 1, 1, 5, 4, 2)
+monetary_lower_2 <-  c(4, 1, 4, 1, 4, 3, 1)
+monetary_upper_2 <-  c(5, 3, 5, 2, 5, 4, 2)
+
+segment_2 <- rfm_segment(rfm_scores,
+                       recency_lower_2,
+                       recency_upper_2,
+                       frequency_lower_2,
+                       frequency_upper_2,
+                       monetary_lower_2,
+                       monetary_upper_2)
+```
+
+Alternatively, I implemented my segments manually. However, the resulting segmetnation is not useful due to large amount ot *others*
+
+```{r}
+rfm_segments <- rfm_scores$rfm %>% 
+  mutate(segment = ifelse(recency_score %in% 4:5 & frequency_score %in% 4:5 & monetary_score %in% 4:5,
+                          "Champ",
+                          ifelse(recency_score %in% 4:5 & frequency_score %in% 2:3 & monetary_score %in% 1:3,
+                          "Regular avg active",
+                          ifelse(recency_score %in% 5:5 & frequency_score %in% 1:1 & monetary_score %in% 4:5,
+                          "Prospect", 
+                          ifelse(recency_score %in% 4:4 & frequency_score %in% 1:1 & monetary_score %in% 1:3,
+                          "Newbie", 
+                          ifelse(recency_score %in% 1:3 & frequency_score %in% 5:5 & monetary_score %in% 4:5,
+                          "Don't loose", 
+                          ifelse(recency_score %in% 1:3 & frequency_score %in% 3:4 & monetary_score %in% 3:4,
+                          "Regular avg at risk", 
+                          ifelse(recency_score %in% 1:3 & frequency_score %in% 1:2 & monetary_score %in% 1:2,
+                          "Lost", "Other"))))))))
+
+
+rfm_segments %>% ggplot(aes(segment)) +
+  geom_bar()
+```
+
+```{r}
+rfm_segments$segment %>% table() %>% prop.table() %>% round(3) %>% sort(decreasing = T)
+```
+
+Inspect behavior by segment:
+
+```{r}
+rfm_plot_median_recency(segment)
+```
+
+```{r}
+rfm_plot_median_frequency(segment)
+```
 
 
 ```{r}
-rfm_fm_plot(rfm_scores)
+rfm_plot_median_monetary(segment)
 ```
+
 
 
