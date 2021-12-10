@@ -568,18 +568,19 @@ rfm_plot_median_frequency(rfm_results_baseline_on_prepro)
 rfm_plot_median_monetary(rfm_results_baseline_on_prepro)
 ```
 
-## OPTICS Clustering
-
-For the clustering (no matter whether optics, kmeans, hiearchical), we need to define a strategy to deal with missing values. We decided to take two approaches: (a) drop all records containing missing values, (b) drop the variables containing many missing values (i.e. age-related variables). Then we can compare both results.
-
-Also, it will be necessary to dummy-code nominal variables, and to scale numeric variables. A code-snippet for these preprocessing operations implemented in the `tidymodels` package is provided below:
+#### clean-up 
 
 ```{r}
-library(tidymodels)
-customers_prep <- customer_segmentation_first_prepro %>% select(-c(Ort, Postcode, generation_moniker)) %>% recipe() %>% 
-  step_dummy(all_nominal()) %>%
-  step_scale(all_numeric()) %>% 
-  prep() %>% 
-  bake(new_data = NULL)
+rm(customer_segmentation_complete,
+   customer_segmentation_raw, 
+   customer_segmentation_with_zip,
+   customers_prep,
+   donors_per_state_per_100_000_inhabitants,
+   other_peeps,
+   rfm_scores,
+   rfm_scores_on_prepro,
+   rfm_segments,
+   rfm_segments_baseline,
+   zip_code_list)
 ```
 
