@@ -42,7 +42,7 @@ output:
 
 ## Prepro
 ```{r}
-library(tidyverse)
+library(tidyverse, readr)
 ```
 
 ```{r}
@@ -53,7 +53,7 @@ feature_description_original
 
 
 ```{r}
-customer_segmentation_raw <- read_csv2(
+customer_segmentation_raw <- readr::read_csv2(
   "data/customer_segmentation_test.csv",
   col_types = list(col_integer(), col_character(), col_character(), col_character(),
                 col_double(), col_double(), col_character(), col_double(), col_double(),
@@ -61,7 +61,13 @@ customer_segmentation_raw <- read_csv2(
                 col_double(), col_character(), col_double(), col_double(), col_character(),
                 col_character(), col_character()),
   guess_max = 400000
-) %>% mutate(
+)
+```
+
+
+```{r}
+
+customer_segmentation_raw <- customer_segmentation_raw %>% mutate(
   `Date of Birth` = lubridate::dmy(`Date of Birth`),
   Gender = as.factor(Gender),
   MERCHANDISE2015 = as.factor(MERCHANDISE2015),

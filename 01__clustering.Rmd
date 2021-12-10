@@ -20,7 +20,7 @@ rmarkdown::render("00__exploration.Rmd")
 
 For the clustering (no matter whether optics, kmeans, hiearchical), we need to define a strategy to deal with missing values. We decided to take two approaches: (a) drop all records containing missing values, (b) drop the variables containing many missing values (i.e. age-related variables). Then we can compare both results.
 
-However, some variables will have to be excluded anyway, because they were either used to extract other features or are per se not useful for our purpose. **This shuold definitely be adapted**
+However, some variables will have to be excluded anyway, because they were either used to extract other features or are per se not useful for our purpose. **This should definitely be adapted**
 ```{r}
 variables_to_exclude = c("ID", # no useful information
                         "Postcode", # to many attributes 
@@ -70,27 +70,35 @@ Also, it will be necessary to dummy-code nominal variables, and to scale numeric
 ```{r}
 library(tidymodels)
 df_without_na_prep <- df_without_na %>% recipe() %>% 
+  step_scale(all_numeric()) %>%
   step_dummy(all_nominal()) %>%
-  step_scale(all_numeric()) %>% 
   prep() %>% 
   bake(new_data = NULL)
 
 df_with_fewer_vars_prep <- df_with_fewer_vars %>% recipe() %>% 
+  step_scale(all_numeric()) %>%  
   step_dummy(all_nominal()) %>%
-  step_scale(all_numeric()) %>% 
   prep() %>% 
   bake(new_data = NULL)
 
 ```
 
+```{r}
+df_without_na_prep
+```
+
+
 ### kmeans
+```{r}
+df_without_na_prep %>% kmeans(centers = 10)
+```
+
+
 ```{r}
 set.seed(42)
 
-# running a kmeans clustering with 5 to 15 centroids
-# this takes a while
 kmeans_clust <- 
-  tibble(k = 5:10) %>%
+  tibble(k = 3:10) %>%
   mutate(
     kclust = map(k, ~kmeans(df_without_na_prep, .x)),
     tidied = map(kclust, tidy),
@@ -98,27 +106,32 @@ kmeans_clust <-
     augmented = map(kclust, augment, df_without_na_prep)
   )
 
-tibble(k = 5:15)
-```
-
-
-```{r}
-kmeans_clust
 
 ```
 
 
 ```{r}
+set.seed(123)
+
+
+gc()
+
+max_k = 10
+
+kmeans_clust <- 
+  tibble(k = 1:max_k) %>%
+  mutate(
+    kclust = map(k, ~kmeans(df_without_na_prep, .x)),
+    tidied = map(kclust, tidy),
+    glanced = map(kclust, glance),
+    augmented = map(kclust, augment, df_without_na_prep)
+  )
+
+
 clusterings <- 
   kmeans_clust %>%
   unnest(cols = c(glanced))
 
-assignments
-
-```
-
-
-```{r}
 # look at total within sum of squares 
 
 ggplot(clusterings, aes(k, tot.withinss)) +
@@ -127,37 +140,42 @@ ggplot(clusterings, aes(k, tot.withinss)) +
 
 ```
 **not super easy to define an optimal k based on this graph** 
-10 might be a good candidate but we have another drop at 14
-so we might look at a larger range of k
+3 is a good candidate, also maybe 5? but both seem too low...
 
 
 ```{r}
-set.seed(42)
+set.seed(123)
 
 # running a kmeans clustering with 1 to 15 centroids
 # this takes a while
 kmeans_clust2 <- 
-  tibble(k = 7:18) %>%
+  tibble(k = 9:12) %>%
   mutate(
-    kclust = map(k, ~kmeans() df_without_na_prep, .x, nstart=100)),
+    kclust = map(k, ~kmeans(df_without_na_prep, .x)),
     tidied = map(kclust, tidy),
     glanced = map(kclust, glance),
     augmented = map(kclust, augment, df_without_na_prep)
   )
 
-?kmeans()
-
-
-
-kmeans()
 
 clusterings2 <- 
-  kmeans_clust %>%
+  kmeans_clust2 %>%
   unnest(cols = c(glanced))
+
+# look at total within sum of squares 
 
 ggplot(clusterings2, aes(k, tot.withinss)) +
   geom_line() +
   geom_point()
+
+'
+produces this error:
+Warning: Problem with `mutate()` column `kclust`.
+i `kclust = map(k, ~kmeans(df_without_na_prep, .x))`.
+i Quick-TRANSfer stage steps exceeded maximum (= 12124150)
+
+https://stackoverflow.com/questions/21382681/kmeans-quick-transfer-stage-steps-exceeded-maximum'
+
 
 
 ```
