@@ -1,6 +1,8 @@
 ---
 title: "R Notebook"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
 
 # Customer Segmentation Group work
@@ -49,10 +51,11 @@ feature_description_original <- readxl::read_excel(
 feature_description_original
 ```
 
+
 ```{r}
 customer_segmentation_raw <- read_csv2(
   "data/customer_segmentation_test.csv",
-  col_types = list(col_character(), col_character(), col_character(), col_character(),
+  col_types = list(col_integer(), col_character(), col_character(), col_character(),
                 col_double(), col_double(), col_character(), col_double(), col_double(),
                 col_character(), col_double(), col_double(), col_character(), col_double(),
                 col_double(), col_character(), col_double(), col_double(), col_character(),
@@ -163,9 +166,7 @@ customer_segmentation_first_prepro <- customer_segmentation_with_zip %>%
     donation_interval = lubridate::day(lubridate::days(LastPaymentDate - PenultimatePaymentDate)),
     
     # days since the last payment in relation to our reference date
-    days_since_last_payment = lubridate::interval(LastPaymentDate, reference_date) %>%
-      as.numeric("days") %>%
-      as.integer(),
+    days_since_last_payment = as.integer(LastPaymentDate - reference_date),
 
     # binary factor variable expressing if any merchandise was bought over the observation period (clumsily coded)
     merchandise_any = as_factor(if_else(
@@ -192,8 +193,14 @@ customer_segmentation_first_prepro <- customer_segmentation_with_zip %>%
   ungroup() %>%
 
   # remove variables that have no further use or
-  select(-c(ID, DateOfBirth, LastPaymentDate, PenultimatePaymentDate))
+  select(-c(DateOfBirth, PenultimatePaymentDate))
 ```
+
+```{r}
+customer_segmentation_first_prepro
+```
+
+
 
 ```{r}
 customer_segmentation_first_prepro %>% skimr::skim()
@@ -299,10 +306,281 @@ ggplot(customer_segmentation_first_prepro, aes(days_since_last_payment)) +
   geom_histogram(binwidth = 30)
 ```
 
+### RFM
+
+RFM segments customers according to three variabless: Recency, Frequency, Monetary Value. Using the `rfm` package, RFM scores can be computed either on raw transaction data (one row per transaction), or on aggregated customer data (one row per customer). For the former, the method `rfm_table_order` can be used, for the latter either `rfm_table_customer` or `rfm_table_customer2`. Since our dataset represents aggregated customer data, the latter should be used. It can be computed directly from the raw data upon adding the two variables `SUMtotal` and `COUNTtotal`:
+
+
 ```{r}
-# Let's try RFM:
+library(rfm)
 
-#install.packages("rfm")
-
-# We need: Recency(LastPaymontMONTH must be transformed to days), Frequency (COUNTtotal), Monetary(SUMtotal)
+rfm_scores <- customer_segmentation_raw %>%
+  # create new variables: total donation sum; total number of donations
+  mutate(SUMtotal = SUM2015 + SUM2016 + SUM2017 + SUM2018 + SUM2019,
+         COUNTtotal = COUNT2015 + COUNT2016 + COUNT2017 + COUNT2018 + COUNT2019,
+         LastPaymentDate = as.Date(LastPaymentDate)) %>%
+  # compute RFM scores
+  rfm_table_customer_2(customer_id = ID,
+                       n_transactions = COUNTtotal,
+                       latest_visit_date = LastPaymentDate,
+                       total_revenue = SUMtotal,
+                       analysis_date = reference_date)
+rfm_scores
 ```
+
+```{r}
+rfm_scores_on_prepro <- customer_segmentation_first_prepro %>% 
+  rfm_table_customer_2(customer_id = ID, 
+                       n_transactions = COUNTtotal, 
+                       latest_visit_date = as.Date(LastPaymentDate), 
+                       total_revenue = SUMtotal, 
+                       analysis_date = reference_date)
+
+
+
+rfm_results_on_prepro <- rfm_scores_on_prepro$rfm %>% as.data.frame()
+
+first_prepro_with_rfm_results <- merge(x = customer_segmentation_first_prepro,
+           y = rfm_results_on_prepro,
+           by.x = "ID", 
+           by.y = "customer_id")
+
+first_prepro_with_rfm_results
+```
+
+
+Visual inspection of RFM scores:
+
+```{r}
+rfm_heatmap(rfm_scores)
+```
+
+In the above heatmap, we can see some interesting patterns (**Note:** The higher the recency score, the more recent the last donation):
+
+- Higher monetary values are characterized by higher donation frequencies and more recent donations. There is an obvious cluster of low monetary value for frequency values in [1,2] and recency in [1,3]. These might be **lost donors**, i.e. customers who donated only a few times, who have not donated in a while and are thus unlikely do donate again in the future.
+- In the upper left corner, we see very recent customers with low frequency (i.e. new donors) who donated sums above average for this recency score. It might be worth focusing on them, since they recently demonstrated above-average donation willingness. This segment may be called **prospects**.
+- In the upper right corner, we can identify frequent and recent donors who donated high sums - these are our **donation champions**.
+- At the lower right (frequency in [5,5], recency in [1,3]) we see donors who frequently donated high sums in the past, but who have not been active recently. Their past donation behaviour indicates high donation willingness, so we should try to reactive them as donors, because we **do not want to loose** them. However, prior to contacting them, we should check whether these donors are still alive, because in the EDA we have seen that there are some very old donors, who might have passed away in the meantime, which would explain the lack of recent donation activity.
+
+There are further, less obvious customer segments in the heatmap. For the sake of clarity, rather than verbally describing the segments, below we visually represent the customer segments we believe to have identified in the heatmap: 
+
+```{r, fig.width=4, fig.height=4}
+# define data frame with frequency and recency score thresholds for each segment 
+heatmap_segments_df <- data.frame(x = c(1, 3, 4.5, 0.5, 0.5, 2, 4),
+                                  y = c(1.5, 1.5, 1.5, 3.5, 4.5, 4, 4),
+                                  lab = c("Lost", "Loyal average donor at risk", "Don't lose",
+                                          "Newbie", "Prospects", "Loyal average donor active",
+                                          "Champ"))
+
+# plot the customer segments
+ggplot(heatmap_segments_df, aes(x, y, label = lab)) +
+  geom_rect(aes(xmin = 0, xmax = 2, ymin = 0, ymax = 3), fill = "red", alpha = 0.1) +
+  geom_rect(aes(xmin = 2, xmax = 4, ymin = 0, ymax = 3), fill = "blue", alpha = 0.1) +
+  geom_rect(aes(xmin = 4, xmax = 5, ymin = 0, ymax = 3), fill = "green", alpha = 0.1) +
+  geom_rect(aes(xmin = 0, xmax = 1, ymin = 3, ymax = 4), fill = "tomato", alpha = 0.1) +
+  geom_rect(aes(xmin = 0, xmax = 1, ymin = 4, ymax = 5), fill = "yellow", alpha = 0.1) +
+  geom_rect(aes(xmin = 1, xmax = 3, ymin = 3, ymax = 5), fill = "orange", alpha = 0.1) +
+  geom_rect(aes(xmin = 0, xmax = 1, ymin = 4, ymax = 5), fill = "cyan", alpha = 0.1) +
+  geom_rect(aes(xmin = 3, xmax = 5, ymin = 3, ymax = 5), fill = "magenta", alpha = 0.1) +
+  geom_text(size=3)
+
+```
+
+
+The `rfm_segment` method can be used to assign donors to a given segment based on their RFM scores. To this end, the upper and lower bounds of recency, frequency and monetary scores for each segment, as well as the respective segment names, need to be defined. However, the code below throws an error, so probably there is a bug in the definition of the lower/upper segment bounds. **ToDo: Fix the bug, or remove this**.
+
+```{r eval=FALSE, include=FALSE}
+segment_names_custom <- c("Champs", "Regular average active", "Prospect", "Newcomer",
+                   "Don't loose", "Regular average at risk", "Lost")
+
+recency_lower_2 <-   c(4, 4, 5, 4, 1, 1, 1)
+recency_upper_2 <-   c(5, 5, 5, 4, 3, 3, 3)
+frequency_lower_2 <- c(4, 2, 1, 1, 5, 3, 1)
+frequency_upper_2 <- c(5, 3, 1, 1, 5, 4, 2)
+monetary_lower_2 <-  c(4, 1, 4, 1, 4, 3, 1)
+monetary_upper_2 <-  c(5, 3, 5, 2, 5, 4, 2)
+
+segment_2 <- rfm_segment(rfm_scores, segment_names = segment_names_custom,
+                       recency_lower_2,
+                       recency_upper_2,
+                       frequency_lower_2,
+                       frequency_upper_2,
+                       monetary_lower_2,
+                       monetary_upper_2)
+```
+
+As an alternative to `rfm_segment`, segments can be assigned to donors with the help of hand-crafted if-else-rules. However, this segmentation is not useful, because it yields a very high number of donors belonging to the `other` segment (approx. 25%). The reason for this is probably the aforementioned error in the definition of the upper/lower segment bounds. 
+
+
+```{r}
+rfm_segments <- rfm_scores$rfm %>% 
+  mutate(segment = ifelse(recency_score %in% 4:5 & frequency_score %in% 4:5 & monetary_score %in% 4:5,
+                          "Champ",
+                          ifelse(recency_score %in% 4:5 & frequency_score %in% 2:3 & monetary_score %in% 1:3,
+                          "Regular avg active",
+                          ifelse(recency_score %in% 5:5 & frequency_score %in% 1:1 & monetary_score %in% 4:5,
+                          "Prospect", 
+                          ifelse(recency_score %in% 4:4 & frequency_score %in% 1:1 & monetary_score %in% 1:3,
+                          "Newbie", 
+                          ifelse(recency_score %in% 1:3 & frequency_score %in% 5:5 & monetary_score %in% 4:5,
+                          "Don't loose", 
+                          ifelse(recency_score %in% 1:3 & frequency_score %in% 3:4 & monetary_score %in% 3:4,
+                          "Regular avg at risk", 
+                          ifelse(recency_score %in% 1:3 & frequency_score %in% 1:2 & monetary_score %in% 1:2,
+                          "Lost", "Other"))))))))
+
+
+rfm_segments %>% ggplot(aes(segment)) +
+  geom_bar()
+
+rfm_segments$segment %>% table() %>% prop.table() %>% round(3) %>% sort(decreasing = T)
+
+
+
+```
+
+
+```{r}
+other_peeps <- rfm_segments %>% filter(segment == "Other") %>% select(customer_id) %>% unique() %>% list()
+
+first_prepro_with_rfm_results %>% filter(ID %in% other_peeps)
+
+# these are the same categories as above, just using the first_prepro data instead of the raw data 
+first_prepro_with_rfm_segments <- first_prepro_with_rfm_results %>% 
+  mutate(segment = ifelse(recency_score %in% 4:5 & frequency_score %in% 4:5 & monetary_score %in% 4:5,
+                          "Champ",
+                          ifelse(recency_score %in% 4:5 & frequency_score %in% 2:3 & monetary_score %in% 1:3,
+                          "Regular avg active",
+                          ifelse(recency_score %in% 5:5 & frequency_score %in% 1:1 & monetary_score %in% 4:5,
+                          "Prospect", 
+                          ifelse(recency_score %in% 4:4 & frequency_score %in% 1:1 & monetary_score %in% 1:3,
+                          "Newbie", 
+                          ifelse(recency_score %in% 1:3 & frequency_score %in% 5:5 & monetary_score %in% 4:5,
+                          "Don't loose", 
+                          ifelse(recency_score %in% 1:3 & frequency_score %in% 3:4 & monetary_score %in% 3:4,
+                          "Regular avg at risk", 
+                          ifelse(recency_score %in% 1:3 & frequency_score %in% 1:2 & monetary_score %in% 1:2,
+                          "Lost", "Other"))))))))
+```
+
+As assumed, We're indeed not covering everything here. E.g. somebody with recency score 4 and frequency score 1 is automatically classified as "other", regardless of monetary value. But that person could easily be a "Prospect" or "Newbie". It might therefore be wise to use the bounds recommended by introductions to rfm.
+
+
+```{r}
+first_prepro_with_rfm_segments %>% filter(segment == "Other") %>% 
+  ggplot(aes(frequency_score, recency_score)) +
+  geom_tile(aes(fill = monetary_score), colour = "white") +
+  scale_fill_distiller(palette = "PuBu", direction = +1)+
+  labs(title="heatmap only on those classified as OTHER in Michael's first try")+
+  theme_minimal()
+
+```
+
+The above heatmap shows that we e.g. missed a lot of "big donors" in the first attempt.
+
+
+
+To remedy the faulty segmentation shown above, we resort to the customer segments (and the respective RFM score thresholds) presented in class (see slide deck of first class, p. 82 as well as https://rpubs.com/Eddie_Zaldivar/705462). We use this mainstream segmentation as our baseline:
+
+```{r}
+# define name of each segment
+segment_names_baseline <- c("Champions", "Loyal Customers", "Potential Loyalist",
+  "New Customers", "Promising", "Need Attention", "About To Sleep",
+  "At Risk", "Can't Lose Them", "Lost")
+
+# set the upper and lower bounds for recency, frequency, and monetary for each segment
+recency_lower <- c(4, 2, 3, 4, 3, 2, 2, 1, 1, 1)
+recency_upper <- c(5, 5, 5, 5, 4, 3, 3, 2, 1, 2)
+frequency_lower <- c(4, 3, 1, 1, 1, 2, 1, 2, 4, 1)
+frequency_upper <- c(5, 5, 3, 1, 1, 3, 2, 5, 5, 2)
+monetary_lower <- c(4, 3, 1, 1, 1, 2, 1, 2, 4, 1)
+monetary_upper <- c(5, 5, 3, 1, 1, 3, 2, 5, 5, 2)
+
+# assign segment to each customer
+rfm_segments_baseline <- rfm_segment(rfm_scores,
+                                     segment_names_baseline,
+                                     recency_lower,
+                                     recency_upper,
+                                     frequency_lower, 
+                                     frequency_upper, 
+                                     monetary_lower,
+                                     monetary_upper)
+
+rfm_segments_baseline$segment %>% table()
+
+# inspect segment assignment
+head(rfm_segments_baseline)
+```
+
+```{r}
+# NOW ON PREPRO DATA and using numeric customer_id
+
+# assign segment to each customer
+rfm_segments_baseline_on_prepro <- rfm_segment(rfm_scores_on_prepro,
+                                     segment_names_baseline,
+                                     recency_lower,
+                                     recency_upper,
+                                     frequency_lower, 
+                                     frequency_upper, 
+                                     monetary_lower,
+                                     monetary_upper)
+
+rfm_segments_baseline_on_prepro
+customer_segmentation_first_prepro
+
+# merge with prepro_data
+rfm_results_baseline_on_prepro <- merge(x = customer_segmentation_first_prepro,
+           y = rfm_segments_baseline_on_prepro,
+           by.x = "ID", 
+           by.y = "customer_id")
+
+# inspect segment assignment
+head(rfm_results_baseline_on_prepro)
+```
+
+The mainstream customer segmentation is better as our own approach since it yields much less `other` instances (only approximately 6.3% of donors are assigned to this segment):
+
+```{r}
+rfm_results_baseline_on_prepro %>% ggplot(aes(segment)) + 
+  geom_bar()
+rfm_results_baseline_on_prepro$segment %>% table() %>% prop.table() %>% round(2) %>% sort(decreasing = T)
+```
+
+
+
+```{r}
+rfm_results_baseline_on_prepro$segment %>% table() %>% prop.table() %>% round(3) %>% sort(decreasing = T)
+```
+
+Finally, we can inspect median scores for each RFM component per segment:
+
+```{r}
+rfm_plot_median_recency(rfm_results_baseline_on_prepro)
+```
+
+
+```{r}
+rfm_plot_median_frequency(rfm_results_baseline_on_prepro)
+```
+
+
+```{r}
+rfm_plot_median_monetary(rfm_results_baseline_on_prepro)
+```
+
+#### clean-up 
+
+```{r}
+rm(customer_segmentation_complete,
+   customer_segmentation_raw, 
+   customer_segmentation_with_zip,
+   customers_prep,
+   donors_per_state_per_100_000_inhabitants,
+   other_peeps,
+   rfm_scores,
+   rfm_scores_on_prepro,
+   rfm_segments,
+   rfm_segments_baseline,
+   zip_code_list)
+```
+

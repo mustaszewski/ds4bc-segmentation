@@ -1,0 +1,185 @@
+---
+title: "01_clustering"
+author: "EmanuelGregorMichaelPeter"
+date: "10 12 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, include=FALSE}
+# Here, we render the exploration file to load all necessary variables into our environment
+# This will take a minute (all plots etc are created again)
+rmarkdown::render("00__exploration.Rmd")
+```
+
+## Clustering
+
+For the clustering (no matter whether optics, kmeans, hiearchical), we need to define a strategy to deal with missing values. We decided to take two approaches: (a) drop all records containing missing values, (b) drop the variables containing many missing values (i.e. age-related variables). Then we can compare both results.
+
+However, some variables will have to be excluded anyway, because they were either used to extract other features or are per se not useful for our purpose. **This shuold definitely be adapted**
+```{r}
+variables_to_exclude = c("ID", # no useful information
+                        "Postcode", # to many attributes 
+                        "MERCHANDISE2015", # merchandise_any might be enough because it is a rare category anyway
+                        "MERCHANDISE2016",
+                        "MERCHANDISE2017",
+                        "MERCHANDISE2018",
+                        "MERCHANDISE2019",
+                        "LastPaymentDate", # expressed in days_since_last_payment
+                        "Ort", # same as postal code
+                        "year_born", # expressed in age_at_last_donation
+                        "SUMtotal", # SUMaverage and SUM per year problably enough
+                        "COUNTtotal", # expressed in individual counts
+                        "LastPaymentMONTH", # expressed in days_since_last_payment
+                        "PenultimatePaymentMONTH", # expressed in donation_interval
+                        "generation_moniker" # good for visualization but better expressed maybe in age_at_last_donation
+                        )
+```
+
+Check remaining features: 
+```{r}
+df_without_variables_to_exlude <- customer_segmentation_first_prepro %>%
+  select(-all_of(variables_to_exclude))
+df_without_variables_to_exlude %>% colnames()
+```
+
+```{r}
+df_without_variables_to_exlude %>% skimr::skim()
+```
+
+
+
+```{r}
+# approach a)
+df_without_na <- df_without_variables_to_exlude %>% drop_na()
+df_without_na %>% nrow() # 242483 cases
+
+# approach b)
+df_with_fewer_vars <- df_without_variables_to_exlude %>% 
+  select(-c(age_at_last_donation)) %>% 
+  drop_na()
+df_with_fewer_vars %>% nrow() # 358819 cases
+```
+
+Also, it will be necessary to dummy-code nominal variables, and to scale numeric variables. A code-snippet for these preprocessing operations implemented in the `tidymodels` package is provided below:
+
+```{r}
+library(tidymodels)
+df_without_na_prep <- df_without_na %>% recipe() %>% 
+  step_dummy(all_nominal()) %>%
+  step_scale(all_numeric()) %>% 
+  prep() %>% 
+  bake(new_data = NULL)
+
+df_with_fewer_vars_prep <- df_with_fewer_vars %>% recipe() %>% 
+  step_dummy(all_nominal()) %>%
+  step_scale(all_numeric()) %>% 
+  prep() %>% 
+  bake(new_data = NULL)
+
+```
+
+### kmeans
+```{r}
+set.seed(42)
+
+# running a kmeans clustering with 5 to 15 centroids
+# this takes a while
+kmeans_clust <- 
+  tibble(k = 5:10) %>%
+  mutate(
+    kclust = map(k, ~kmeans(df_without_na_prep, .x)),
+    tidied = map(kclust, tidy),
+    glanced = map(kclust, glance),
+    augmented = map(kclust, augment, df_without_na_prep)
+  )
+
+tibble(k = 5:15)
+```
+
+
+```{r}
+kmeans_clust
+
+```
+
+
+```{r}
+clusterings <- 
+  kmeans_clust %>%
+  unnest(cols = c(glanced))
+
+assignments
+
+```
+
+
+```{r}
+# look at total within sum of squares 
+
+ggplot(clusterings, aes(k, tot.withinss)) +
+  geom_line() +
+  geom_point()
+
+```
+**not super easy to define an optimal k based on this graph** 
+10 might be a good candidate but we have another drop at 14
+so we might look at a larger range of k
+
+
+```{r}
+set.seed(42)
+
+# running a kmeans clustering with 1 to 15 centroids
+# this takes a while
+kmeans_clust2 <- 
+  tibble(k = 7:18) %>%
+  mutate(
+    kclust = map(k, ~kmeans() df_without_na_prep, .x, nstart=100)),
+    tidied = map(kclust, tidy),
+    glanced = map(kclust, glance),
+    augmented = map(kclust, augment, df_without_na_prep)
+  )
+
+?kmeans()
+
+
+
+kmeans()
+
+clusterings2 <- 
+  kmeans_clust %>%
+  unnest(cols = c(glanced))
+
+ggplot(clusterings2, aes(k, tot.withinss)) +
+  geom_line() +
+  geom_point()
+
+
+```
+
+
+
+```{r}
+# the most pronounced elbow is at , thus:
+#optimal_k <- ??
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
