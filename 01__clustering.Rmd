@@ -29,14 +29,24 @@ variables_to_exclude = c("ID", # no useful information
                         "MERCHANDISE2017",
                         "MERCHANDISE2018",
                         "MERCHANDISE2019",
-                        "LastPaymentDate", # expressed in days_since_last_payment
+                        "COUNT2015", # expressed in COUNTtotal and COUNTaverage
+                        "COUNT2016",
+                        "COUNT2017",
+                        "COUNT2018",
+                        "COUNT2019", 
+                        "SUM2015", # expressed in SUMtotal and SUMaverage
+                        "SUM2016",
+                        "SUM2017",
+                        "SUM2018",
+                        "SUM2019",
+                        "LastPaymentDate", # expressed in days_since_last_payment,
+                        "LastPaymentYEAR",
                         "Ort", # same as postal code
                         "year_born", # expressed in age_at_last_donation
-                        "SUMtotal", # SUMaverage and SUM per year problably enough
-                        "COUNTtotal", # expressed in individual counts
                         "LastPaymentMONTH", # expressed in days_since_last_payment
                         "PenultimatePaymentMONTH", # expressed in donation_interval
-                        "generation_moniker" # good for visualization but better expressed maybe in age_at_last_donation
+                        "PenultimatePaymentYEAR", # expressed in donation_interval
+                        "age_at_last_donation" # expressed in generation_monikert
                         )
 ```
 
@@ -56,13 +66,13 @@ df_without_variables_to_exlude %>% skimr::skim()
 ```{r}
 # approach a)
 df_without_na <- df_without_variables_to_exlude %>% drop_na()
-df_without_na %>% nrow() # 242483 cases
+df_without_na %>% nrow() # 242480 cases
 
 # approach b)
 df_with_fewer_vars <- df_without_variables_to_exlude %>% 
-  select(-c(age_at_last_donation)) %>% 
+  select(-c(generation_moniker, donation_interval)) %>% 
   drop_na()
-df_with_fewer_vars %>% nrow() # 358819 cases
+df_with_fewer_vars %>% nrow() # 396694 cases
 ```
 
 Also, it will be necessary to dummy-code nominal variables, and to scale numeric variables. A code-snippet for these preprocessing operations implemented in the `tidymodels` package is provided below:
@@ -89,34 +99,14 @@ df_without_na_prep
 
 
 ### kmeans
-```{r}
-df_without_na_prep %>% kmeans(centers = 10)
-```
-
-
-```{r}
-set.seed(42)
-
-kmeans_clust <- 
-  tibble(k = 3:10) %>%
-  mutate(
-    kclust = map(k, ~kmeans(df_without_na_prep, .x)),
-    tidied = map(kclust, tidy),
-    glanced = map(kclust, glance),
-    augmented = map(kclust, augment, df_without_na_prep)
-  )
-
-
-```
-
 
 ```{r}
 set.seed(123)
 
 
-gc()
+gc() # garbage collection to improve performance
 
-max_k = 10
+max_k = 20
 
 kmeans_clust <- 
   tibble(k = 1:max_k) %>%
@@ -127,6 +117,13 @@ kmeans_clust <-
     augmented = map(kclust, augment, df_without_na_prep)
   )
 
+'
+produces this error:
+Warning: Problem with `mutate()` column `kclust`.
+i `kclust = map(k, ~kmeans(df_without_na_prep, .x))`.
+i Quick-TRANSfer stage steps exceeded maximum (= 12124150)
+
+https://stackoverflow.com/questions/21382681/kmeans-quick-transfer-stage-steps-exceeded-maximum'
 
 clusterings <- 
   kmeans_clust %>%
@@ -138,18 +135,24 @@ ggplot(clusterings, aes(k, tot.withinss)) +
   geom_line() +
   geom_point()
 
+
+
 ```
-**not super easy to define an optimal k based on this graph** 
-3 is a good candidate, also maybe 5? but both seem too low...
+
+
+Because of the error given above, we reduce the amount of different values for k 
 
 
 ```{r}
 set.seed(123)
 
-# running a kmeans clustering with 1 to 15 centroids
-# this takes a while
-kmeans_clust2 <- 
-  tibble(k = 9:12) %>%
+
+gc() # garbage collection to improve performance
+
+max_k = 16
+
+kmeans_clust <- 
+  tibble(k = 1:max_k) %>%
   mutate(
     kclust = map(k, ~kmeans(df_without_na_prep, .x)),
     tidied = map(kclust, tidy),
@@ -157,36 +160,22 @@ kmeans_clust2 <-
     augmented = map(kclust, augment, df_without_na_prep)
   )
 
-
-clusterings2 <- 
-  kmeans_clust2 %>%
+clusterings <- 
+  kmeans_clust %>%
   unnest(cols = c(glanced))
 
 # look at total within sum of squares 
 
-ggplot(clusterings2, aes(k, tot.withinss)) +
+ggplot(clusterings, aes(k, tot.withinss)) +
   geom_line() +
   geom_point()
 
-'
-produces this error:
-Warning: Problem with `mutate()` column `kclust`.
-i `kclust = map(k, ~kmeans(df_without_na_prep, .x))`.
-i Quick-TRANSfer stage steps exceeded maximum (= 12124150)
-
-https://stackoverflow.com/questions/21382681/kmeans-quick-transfer-stage-steps-exceeded-maximum'
-
 
 
 ```
 
 
-
-```{r}
-# the most pronounced elbow is at , thus:
-#optimal_k <- ??
-```
-
+Have to consider whether we've found the best value for k or if we've produced artificial results. 
 
 
 

@@ -147,6 +147,9 @@ customer_segmentation_first_prepro <- customer_segmentation_with_zip %>%
 
     # average donation amount
     SUMaverage = SUMtotal / COUNTtotal,
+    
+    # average number of donations per year over observation period
+    COUNTaverage = COUNTtotal/5,
 
     # month of the last payment
     LastPaymentMONTH = lubridate::month(LastPaymentDate) %>% as.factor(),
