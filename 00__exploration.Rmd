@@ -51,10 +51,11 @@ feature_description_original <- readxl::read_excel(
 feature_description_original
 ```
 
+
 ```{r}
 customer_segmentation_raw <- read_csv2(
   "data/customer_segmentation_test.csv",
-  col_types = list(col_character(), col_character(), col_character(), col_character(),
+  col_types = list(col_integer(), col_character(), col_character(), col_character(),
                 col_double(), col_double(), col_character(), col_double(), col_double(),
                 col_character(), col_double(), col_double(), col_character(), col_double(),
                 col_double(), col_character(), col_double(), col_double(), col_character(),
@@ -192,7 +193,7 @@ customer_segmentation_first_prepro <- customer_segmentation_with_zip %>%
   ungroup() %>%
 
   # remove variables that have no further use or
-  select(-c(ID, DateOfBirth, LastPaymentDate, PenultimatePaymentDate))
+  select(-c(DateOfBirth, PenultimatePaymentDate))
 ```
 
 ```{r}
@@ -324,9 +325,29 @@ rfm_scores <- customer_segmentation_raw %>%
                        latest_visit_date = LastPaymentDate,
                        total_revenue = SUMtotal,
                        analysis_date = reference_date)
-
 rfm_scores
 ```
+
+```{r}
+rfm_scores_on_prepro <- customer_segmentation_first_prepro %>% 
+  rfm_table_customer_2(customer_id = ID, 
+                       n_transactions = COUNTtotal, 
+                       latest_visit_date = as.Date(LastPaymentDate), 
+                       total_revenue = SUMtotal, 
+                       analysis_date = reference_date)
+
+
+
+rfm_results_on_prepro <- rfm_scores_on_prepro$rfm %>% as.data.frame()
+
+first_prepro_with_rfm_results <- merge(x = customer_segmentation_first_prepro,
+           y = rfm_results_on_prepro,
+           by.x = "ID", 
+           by.y = "customer_id")
+
+first_prepro_with_rfm_results
+```
+
 
 Visual inspection of RFM scores:
 
@@ -343,7 +364,7 @@ In the above heatmap, we can see some interesting patterns (**Note:** The higher
 
 There are further, less obvious customer segments in the heatmap. For the sake of clarity, rather than verbally describing the segments, below we visually represent the customer segments we believe to have identified in the heatmap: 
 
-```{r}
+```{r, fig.width=4, fig.height=4}
 # define data frame with frequency and recency score thresholds for each segment 
 heatmap_segments_df <- data.frame(x = c(1, 3, 4.5, 0.5, 0.5, 2, 4),
                                   y = c(1.5, 1.5, 1.5, 3.5, 4.5, 4, 4),
@@ -361,7 +382,7 @@ ggplot(heatmap_segments_df, aes(x, y, label = lab)) +
   geom_rect(aes(xmin = 1, xmax = 3, ymin = 3, ymax = 5), fill = "orange", alpha = 0.1) +
   geom_rect(aes(xmin = 0, xmax = 1, ymin = 4, ymax = 5), fill = "cyan", alpha = 0.1) +
   geom_rect(aes(xmin = 3, xmax = 5, ymin = 3, ymax = 5), fill = "magenta", alpha = 0.1) +
-  geom_text()
+  geom_text(size=3)
 
 ```
 
@@ -415,7 +436,48 @@ rfm_segments %>% ggplot(aes(segment)) +
 rfm_segments$segment %>% table() %>% prop.table() %>% round(3) %>% sort(decreasing = T)
 
 
+
 ```
+
+
+```{r}
+other_peeps <- rfm_segments %>% filter(segment == "Other") %>% select(customer_id) %>% unique() %>% list()
+
+first_prepro_with_rfm_results %>% filter(ID %in% other_peeps)
+
+# these are the same categories as above, just using the first_prepro data instead of the raw data 
+first_prepro_with_rfm_segments <- first_prepro_with_rfm_results %>% 
+  mutate(segment = ifelse(recency_score %in% 4:5 & frequency_score %in% 4:5 & monetary_score %in% 4:5,
+                          "Champ",
+                          ifelse(recency_score %in% 4:5 & frequency_score %in% 2:3 & monetary_score %in% 1:3,
+                          "Regular avg active",
+                          ifelse(recency_score %in% 5:5 & frequency_score %in% 1:1 & monetary_score %in% 4:5,
+                          "Prospect", 
+                          ifelse(recency_score %in% 4:4 & frequency_score %in% 1:1 & monetary_score %in% 1:3,
+                          "Newbie", 
+                          ifelse(recency_score %in% 1:3 & frequency_score %in% 5:5 & monetary_score %in% 4:5,
+                          "Don't loose", 
+                          ifelse(recency_score %in% 1:3 & frequency_score %in% 3:4 & monetary_score %in% 3:4,
+                          "Regular avg at risk", 
+                          ifelse(recency_score %in% 1:3 & frequency_score %in% 1:2 & monetary_score %in% 1:2,
+                          "Lost", "Other"))))))))
+```
+
+As assumed, We're indeed not covering everything here. E.g. somebody with recency score 4 and frequency score 1 is automatically classified as "other", regardless of monetary value. But that person could easily be a "Prospect" or "Newbie". It might therefore be wise to use the bounds recommended by introductions to rfm.
+
+
+```{r}
+first_prepro_with_rfm_segments %>% filter(segment == "Other") %>% 
+  ggplot(aes(frequency_score, recency_score)) +
+  geom_tile(aes(fill = monetary_score), colour = "white") +
+  scale_fill_distiller(palette = "PuBu", direction = +1)+
+  labs(title="heatmap only on those classified as OTHER in Michael's first try")+
+  theme_minimal()
+
+```
+
+The above heatmap shows that we e.g. missed a lot of "big donors" in the first attempt.
+
 
 
 To remedy the faulty segmentation shown above, we resort to the customer segments (and the respective RFM score thresholds) presented in class (see slide deck of first class, p. 82 as well as https://rpubs.com/Eddie_Zaldivar/705462). We use this mainstream segmentation as our baseline:
@@ -444,43 +506,71 @@ rfm_segments_baseline <- rfm_segment(rfm_scores,
                                      monetary_lower,
                                      monetary_upper)
 
+rfm_segments_baseline$segment %>% table()
+
 # inspect segment assignment
 head(rfm_segments_baseline)
 ```
 
-The mainstream customer segmentation is better as our own approach since it yields much less `other` instances (only approximately 6.3% of donors are assigned to this segment):
-
-
 ```{r}
-rfm_segments_baseline %>% ggplot(aes(segment)) + 
-  geom_bar()
+# NOW ON PREPRO DATA and using numeric customer_id
 
-rfm_segments_baseline$segment %>% table() %>% prop.table() %>% round(2) %>% sort(decreasing = T)
+# assign segment to each customer
+rfm_segments_baseline_on_prepro <- rfm_segment(rfm_scores_on_prepro,
+                                     segment_names_baseline,
+                                     recency_lower,
+                                     recency_upper,
+                                     frequency_lower, 
+                                     frequency_upper, 
+                                     monetary_lower,
+                                     monetary_upper)
+
+rfm_segments_baseline_on_prepro
+customer_segmentation_first_prepro
+
+# merge with prepro_data
+rfm_results_baseline_on_prepro <- merge(x = customer_segmentation_first_prepro,
+           y = rfm_segments_baseline_on_prepro,
+           by.x = "ID", 
+           by.y = "customer_id")
+
+# inspect segment assignment
+head(rfm_results_baseline_on_prepro)
 ```
 
+The mainstream customer segmentation is better as our own approach since it yields much less `other` instances (only approximately 6.3% of donors are assigned to this segment):
+
 ```{r}
-rfm_segments_baseline$segment %>% table() %>% prop.table() %>% round(3) %>% sort(decreasing = T)
+rfm_results_baseline_on_prepro %>% ggplot(aes(segment)) + 
+  geom_bar()
+rfm_results_baseline_on_prepro$segment %>% table() %>% prop.table() %>% round(2) %>% sort(decreasing = T)
+```
+
+
+
+```{r}
+rfm_results_baseline_on_prepro$segment %>% table() %>% prop.table() %>% round(3) %>% sort(decreasing = T)
 ```
 
 Finally, we can inspect median scores for each RFM component per segment:
 
 ```{r}
-rfm_plot_median_recency(rfm_segments_baseline)
+rfm_plot_median_recency(rfm_results_baseline_on_prepro)
 ```
 
 
 ```{r}
-rfm_plot_median_frequency(rfm_segments_baseline)
+rfm_plot_median_frequency(rfm_results_baseline_on_prepro)
 ```
 
 
 ```{r}
-rfm_plot_median_monetary(rfm_segments_baseline)
+rfm_plot_median_monetary(rfm_results_baseline_on_prepro)
 ```
 
 ## OPTICS Clustering
 
-For the clustering (no matte whethre optics, kmeans, hiearchical), we need to define a strategy to deal with missing values. We decided to take two approaches: (a) drop all records containing missing values, (b) drop the variables containing many missing values (i.e. age-related variables). Then we can compare both results.
+For the clustering (no matter whether optics, kmeans, hiearchical), we need to define a strategy to deal with missing values. We decided to take two approaches: (a) drop all records containing missing values, (b) drop the variables containing many missing values (i.e. age-related variables). Then we can compare both results.
 
 Also, it will be necessary to dummy-code nominal variables, and to scale numeric variables. A code-snippet for these preprocessing operations implemented in the `tidymodels` package is provided below:
 
