@@ -100,7 +100,7 @@ df_without_na_prep
 
 ### kmeans
 
-```{r}
+```{r eval=FALSE, include=FALSE}
 set.seed(123)
 
 
@@ -174,19 +174,44 @@ ggplot(clusterings, aes(k, tot.withinss)) +
 
 ```
 
+According to the elbow method, the above plot suggests that `k=5` is the optimal $k$. Using this information, we can cluster the data using `k=5`.
 
-Have to consider whether we've found the best value for k or if we've produced artificial results. 
+```{r}
+kclust <- kmeans(df_with_fewer_vars_prep, centers = 5)
+```
+
+### Visualise clusters using PCA
+
+```{r}
+library(factoextra)
+pca_res <- prcomp(df_with_fewer_vars_prep, scale = TRUE)
+```
 
 
+```{r}
+# visualise PCA
+fviz_pca_ind(pca_res,
+             axes = c(1,2),
+             geom.ind = c("point"),
+             title="K-Means Clustering of Data Visualised in 2D Using PCA",
+             habillage = kclust$cluster, # color data points by k-means cluster
+             addEllipses = TRUE) + # add concentration ellipses
+  scale_color_brewer(palette = "Set1") # change color palette for readability
+```
 
 
+```{r}
+# compute variance explained by each principal component
+get_eigenvalue(pca_res)  %>% round(1)
+```
 
 
-
-
-
-
-
-
+```{r}
+# plot proportion of variance explained by each of first 15 principal components
+fviz_eig(pca_res,
+         choice = "variance",
+         ncp=20,
+         addlabels = T)
+```
 
 
