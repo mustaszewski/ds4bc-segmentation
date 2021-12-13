@@ -177,34 +177,37 @@ ggplot(clusterings, aes(k, tot.withinss)) +
 According to the elbow method, the above plot suggests that `k=5` is the optimal $k$. Using this information, we can cluster the data using `k=5`.
 
 ```{r}
-kclust <- kmeans(df_with_fewer_vars_prep, centers = 5)
+kclust_k5 <- kmeans(df_without_na_prep, centers = 5)
+
+#TODO: Assign clusters to raw data
 ```
 
-### Visualise clusters using PCA
+### Visualise Clusters using PCA
 
 ```{r}
+# compute PCA
 library(factoextra)
-pca_res <- prcomp(df_with_fewer_vars_prep, scale = TRUE)
+pca_res <- prcomp(df_without_na_prep, scale = TRUE)
 ```
 
-
 ```{r}
-# visualise PCA
+# visualise PCA: data points are shown in 2D, color corresponds to cluster assignment
 fviz_pca_ind(pca_res,
-             axes = c(1,2),
-             geom.ind = c("point"),
-             title="K-Means Clustering of Data Visualised in 2D Using PCA",
-             habillage = kclust$cluster, # color data points by k-means cluster
+             axes = c(1,2), # show PCA dimensions 1 and 2
+             geom.ind = c("point"), # surpress text labels with observation IDs
+             title="K-Means Clustering (k=5) of Data Visualised in 2D Using PCA",
+             habillage = kclust_k5$cluster, # color data points by k-means cluster
              addEllipses = TRUE) + # add concentration ellipses
   scale_color_brewer(palette = "Set1") # change color palette for readability
 ```
 
+Let's check how much varaince is explained by the PCs: We see that 18 (out of 24 variables) dimensions are needed to explain ~ 95% of the variance. The first three PCs explain 28% of the variance, which is not overwhelming. 
 
 ```{r}
 # compute variance explained by each principal component
 get_eigenvalue(pca_res)  %>% round(1)
 ```
-
+The bar plot below shows the above table in visual form, so it adds no further insights.
 
 ```{r}
 # plot proportion of variance explained by each of first 15 principal components
@@ -213,5 +216,37 @@ fviz_eig(pca_res,
          ncp=20,
          addlabels = T)
 ```
+To understand which variables are associated with the PCA dimensions, we inspect the variable correlation circle. 
+
+
+```{r}
+fviz_pca_var(pca_res,
+             axes = c(1,2),
+             repel = F) # set to TRUE to avoid overlap (not all labels are shown)
+```
+
+Overlapping text makes it hard to intepret the plot; the only thing we can see clearly is that PCA dimension 2 represents gender. Thus, data points that appear in the upper part of the PCA individuals plot above are female, the ones in the lower part are male. This explains the three (or six) visually obvious clusters in the PCA plot.
+
+To better understand the association between individual variables and each PC, we can inspect a correlation plot that shows the quality of representation of each variable (`cos2`) for each dimension. High cos2 values indicate a good representation on the variable on the given PC (= variable is close to correlation circle). The plot below confirms that dimension 2 represents gender. Dimension 3 is determined by total donation sum, Dimension 4 by christmas donors.
+
+```{r}
+library(corrplot)
+var <- get_pca_var(pca_res)
+corrplot(var$cos2, is.corr=FALSE)
+
+```
+
+Dimension 1 is represented by the variables `COUNTtotal`, `COUNTaverage`, `num_od_fonation_years`, and, to a lesser extent, `donation_interval` and `days_since_last_payment`. The variable correlation circle of the first dimension only shown below helps us understand Dimension 1 in the PCA individuals plot: Towards the right of the PCA we have donors with high total counts of donations and many donation years ("Stammkunden"?), towards the left we have donors with higher values of `donation_interval`. **TODO: What does this tell us?**
+
+
+```{r}
+fviz_pca_var(pca_res,
+             axes = c(1,1),
+             repel = T)
+```
+
+
+
+
 
 
