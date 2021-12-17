@@ -99,16 +99,16 @@ df_without_na_prep
 
 
 ### kmeans
-
+**Approach A**
 ```{r eval=FALSE, include=FALSE}
 set.seed(123)
 
-
 gc() # garbage collection to improve performance
 
-max_k = 20
 
-kmeans_clust <- 
+max_k = 10
+
+kmeans_clust_a <- 
   tibble(k = 1:max_k) %>%
   mutate(
     kclust = map(k, ~kmeans(df_without_na_prep, .x)),
@@ -117,132 +117,180 @@ kmeans_clust <-
     augmented = map(kclust, augment, df_without_na_prep)
   )
 
-'
-produces this error:
-Warning: Problem with `mutate()` column `kclust`.
-i `kclust = map(k, ~kmeans(df_without_na_prep, .x))`.
-i Quick-TRANSfer stage steps exceeded maximum (= 12124150)
-
-https://stackoverflow.com/questions/21382681/kmeans-quick-transfer-stage-steps-exceeded-maximum'
-
-clusterings <- 
-  kmeans_clust %>%
+clusterings_a <- 
+  kmeans_clust_a %>%
   unnest(cols = c(glanced))
-
-# look at total within sum of squares 
-
-ggplot(clusterings, aes(k, tot.withinss)) +
-  geom_line() +
-  geom_point()
-
-
 
 ```
 
 
-Because of the error given above, we reduce the amount of different values for k 
-
-
+**Approach B**
 ```{r}
 set.seed(123)
 
 
 gc() # garbage collection to improve performance
 
-max_k = 16
+max_k = 10
 
-kmeans_clust <- 
+kmeans_clust_b <- 
   tibble(k = 1:max_k) %>%
   mutate(
-    kclust = map(k, ~kmeans(df_without_na_prep, .x)),
+    kclust = map(k, ~kmeans(df_with_fewer_vars_prep, .x)),
     tidied = map(kclust, tidy),
     glanced = map(kclust, glance),
-    augmented = map(kclust, augment, df_without_na_prep)
+    augmented = map(kclust, augment, df_with_fewer_vars_prep)
   )
 
-clusterings <- 
-  kmeans_clust %>%
+clusterings_b <- 
+  kmeans_clust_b %>%
   unnest(cols = c(glanced))
+```
 
+
+
+
+**deciding for k**
+```{r}
 # look at total within sum of squares 
-
-ggplot(clusterings, aes(k, tot.withinss)) +
+ggplot(clusterings_a, aes(k, tot.withinss)) +
   geom_line() +
-  geom_point()
+  geom_point()+
+  scale_x_discrete(limits = seq(1:10))+
+  labs(title = "approach a)")
 
-
+ggplot(clusterings_b, aes(k, tot.withinss)) +
+  geom_line() +
+  geom_point()+
+  scale_x_discrete(limits = seq(1:10))+
+  labs(title = "approach b)")
 
 ```
 
-According to the elbow method, the above plot suggests that `k=5` is the optimal $k$. Using this information, we can cluster the data using `k=5`.
+According to the elbow method, the above plot suggests that `k=5` is the optimal $k$ for approach a). Using this information, we can cluster the data using `k=5`.
+For b), `k=4` is the optimal $k$. 
 
 ```{r}
-kclust_k5 <- kmeans(df_without_na_prep, centers = 5)
+kclust_a_k5 <- kmeans(df_without_na_prep, centers = 5)
+kclust_b_k4 <- kmeans(df_with_fewer_vars_prep, centers = 4)
 
 #TODO: Assign clusters to raw data
 ```
+
+
+### assigning clusters to raw data
+
+```{r}
+#kclust_a_k5 %>% attributes()
+kmeans_results_a <- cbind(df_without_na, cluster = kclust_a_k5$cluster) %>% 
+  select(cluster, everything())
+kmeans_results_b <- cbind(df_with_fewer_vars, cluster = kclust_b_k4$cluster) %>% 
+  select(cluster, everything())
+
+kmeans_results_a %>% head()
+kmeans_results_b %>% head()
+```
+
 
 ### Visualise Clusters using PCA
 
 ```{r}
 # compute PCA
 library(factoextra)
-pca_res <- prcomp(df_without_na_prep, scale = TRUE)
+pca_res_a <- prcomp(df_without_na_prep, scale = TRUE)
+pca_res_b <- prcomp(df_with_fewer_vars_prep, scale= TRUE)
 ```
 
 ```{r}
 # visualise PCA: data points are shown in 2D, color corresponds to cluster assignment
-fviz_pca_ind(pca_res,
+fviz_pca_ind(pca_res_a,
              axes = c(1,2), # show PCA dimensions 1 and 2
              geom.ind = c("point"), # surpress text labels with observation IDs
-             title="K-Means Clustering (k=5) of Data Visualised in 2D Using PCA",
-             habillage = kclust_k5$cluster, # color data points by k-means cluster
+             title="K-Means Clustering (k=5) of Data Visualised in 2D Using PCA (a)",
+             habillage = kclust_a_k5$cluster, # color data points by k-means cluster
              addEllipses = TRUE) + # add concentration ellipses
   scale_color_brewer(palette = "Set1") # change color palette for readability
+
+fviz_pca_ind(pca_res_b,
+             axes = c(1,2),
+             geom.ind = c("point"),
+             title="K-Means Clustering (k=5) of Data Visualised in 2D Using PCA (b)",
+             habillage = kclust_b_k4$cluster,
+             addEllipses = TRUE) +
+  scale_color_brewer(palette = "Set1")
 ```
 
-Let's check how much varaince is explained by the PCs: We see that 18 (out of 24 variables) dimensions are needed to explain ~ 95% of the variance. The first three PCs explain 28% of the variance, which is not overwhelming. 
+Let's check how much varaince is explained by the PCs: We see that 18 (out of 24 variables) dimensions are needed to explain ~ 95% of the variance. The first three PCs explain 28% of the variance in approach a) and 25% in approach b), which is not overwhelming. 
 
 ```{r}
-# compute variance explained by each principal component
-get_eigenvalue(pca_res)  %>% round(1)
+# compute variance explained by each principal component a)
+get_eigenvalue(pca_res_a)  %>% round(1)
 ```
+```{r}
+# compute variance explained by each principal component a)
+get_eigenvalue(pca_res_b)  %>% round(1)
+```
+
 The bar plot below shows the above table in visual form, so it adds no further insights.
 
 ```{r}
 # plot proportion of variance explained by each of first 15 principal components
-fviz_eig(pca_res,
+fviz_eig(pca_res_a,
          choice = "variance",
          ncp=20,
-         addlabels = T)
+         addlabels = T)+
+  labs(title = "Scree plot - approach a)")
+fviz_eig(pca_res_b,
+         choice = "variance",
+         ncp=20,
+         addlabels = T)+
+  labs(title = "Scree plot - approach b)")
 ```
 To understand which variables are associated with the PCA dimensions, we inspect the variable correlation circle. 
 
 
 ```{r}
-fviz_pca_var(pca_res,
+fviz_pca_var(pca_res_a,
              axes = c(1,2),
-             repel = F) # set to TRUE to avoid overlap (not all labels are shown)
+             repel = F)+ # set to TRUE to avoid overlap (not all labels are shown)
+  labs(title = "Variables - PCA - approach a)")
+fviz_pca_var(pca_res_b,
+             axes = c(1,2),
+             repel = F)+ # set to TRUE to avoid overlap (not all labels are shown)
+  labs(title = "Scree plot - approach b)")
 ```
-
+**Interpatation approach a)**
 Overlapping text makes it hard to intepret the plot; the only thing we can see clearly is that PCA dimension 2 represents gender. Thus, data points that appear in the upper part of the PCA individuals plot above are female, the ones in the lower part are male. This explains the three (or six) visually obvious clusters in the PCA plot.
 
 To better understand the association between individual variables and each PC, we can inspect a correlation plot that shows the quality of representation of each variable (`cos2`) for each dimension. High cos2 values indicate a good representation on the variable on the given PC (= variable is close to correlation circle). The plot below confirms that dimension 2 represents gender. Dimension 3 is determined by total donation sum, Dimension 4 by christmas donors.
 
+
 ```{r}
 library(corrplot)
-var <- get_pca_var(pca_res)
-corrplot(var$cos2, is.corr=FALSE)
+var_a <- get_pca_var(pca_res_a)
+var_b <- get_pca_var(pca_res_b)
+corrplot(var_a$cos2, is.corr=FALSE, 
+         title = "Corr plot - approach a)", 
+         mar = c(0,0,1,0)) # fixes wrong positioning of title (outside of margins by default)
+corrplot(var_b$cos2, is.corr=FALSE, 
+         title = "Corr plot - approach b)",
+         mar = c(0,0,1,0))
+
 
 ```
-
+**Interpretation approach a):**
 Dimension 1 is represented by the variables `COUNTtotal`, `COUNTaverage`, `num_od_fonation_years`, and, to a lesser extent, `donation_interval` and `days_since_last_payment`. The variable correlation circle of the first dimension only shown below helps us understand Dimension 1 in the PCA individuals plot: Towards the right of the PCA we have donors with high total counts of donations and many donation years ("Stammkunden"?), towards the left we have donors with higher values of `donation_interval`. **TODO: What does this tell us?**
 
 
 ```{r}
-fviz_pca_var(pca_res,
+fviz_pca_var(pca_res_a,
              axes = c(1,1),
-             repel = T)
+             repel = T)+
+  labs(title = "Variables - PCA - approach a)")
+fviz_pca_var(pca_res_b,
+             axes = c(1,1),
+             repel = T)+
+  labs(title = "Variables - PCA - approach a)")
 ```
 
 
