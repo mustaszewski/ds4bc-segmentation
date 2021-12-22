@@ -294,7 +294,165 @@ fviz_pca_var(pca_res_b,
 ```
 
 
+# Multiplots
 
 
+```{r}
+p1 = ggplot(data = kmeans_results_a, aes(y = cluster)) +
+  geom_bar(aes(fill = Bundesland)) +
+  ggtitle("Count of Clusters by Bundesland K5") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
 
+```{r}
+p2 = ggplot(data = kmeans_results_b, aes(y = cluster)) +
+  geom_bar(aes(fill = Bundesland)) +
+  ggtitle("Count of Clusters by Bundesland K4") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+```{r}
+p3 = ggplot(data = kmeans_results_a, aes(y = cluster)) +
+  geom_bar(aes(fill = Gender)) +
+  ggtitle("Count of Clusters by Gender K5") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+p4 = ggplot(data = kmeans_results_b, aes(y = cluster)) +
+  geom_bar(aes(fill = Gender)) +
+  ggtitle("Count of Clusters by Gender K4") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+p5 = ggplot(data = kmeans_results_a, aes(y = cluster)) +
+  geom_bar(aes(fill = XMAS_donor)) +
+  ggtitle("Count of Clusters by XMAS_donor K5") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+p6 = ggplot(data = kmeans_results_b, aes(y = cluster)) +
+  geom_bar(aes(fill = XMAS_donor)) +
+  ggtitle("Count of Clusters by XMAS_donor K4") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+multiplot(p1,p3,p5,p2,p4,p6,cols=2)
+```
+
+```{r}
+ggplot(data = kmeans_results_a, aes(y = cluster)) +
+  geom_bar(aes(fill = generation_moniker)) +
+  ggtitle("Count of Clusters by generation") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+ggplot(data = kmeans_results_b, aes(y = cluster)) +
+  geom_bar(aes(fill = generation_moniker)) +
+  ggtitle("Count of Clusters by generation") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+```{r}
+plot5 <-  kmeans_results_a %>%
+  ggplot(aes(x = SUMtotal, y = cluster)) + 
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "violet") +
+  labs(x = "SUMtotal", y="Cluster")
+
+plot6 <-  kmeans_results_a %>%
+  ggplot(aes(x = SUMaverage, y = cluster)) + 
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "violet") +
+  labs(x = "SUMaverage", y="Cluster")
+
+plot7 <-  kmeans_results_a %>%
+  ggplot(aes(x = COUNTaverage, y = cluster)) + 
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "violet") +
+  labs(x = "COUNTaverage", y="Cluster")
+
+plot8 <-  kmeans_results_a %>%
+  ggplot(aes(x = COUNTtotal, y = cluster)) + 
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "violet") +
+  labs(x = "COUNTtotal", y="Cluster")
+
+plot9 <-  kmeans_results_a %>%
+  ggplot(aes(x = days_since_last_payment, y = cluster)) + 
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "violet") +
+  labs(x = "days since payment", y="Cluster")
+
+plot10 <-  kmeans_results_a %>%
+  ggplot(aes(x = merchandise_any, y = cluster)) + 
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "violet") +
+  labs(x = "merchandise_any", y="Cluster")
+
+plot11 <-  kmeans_results_a %>%
+  ggplot(aes(x = num_of_donation_years, y = cluster)) + 
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "violet") +
+  labs(x = "num donations year", y="Cluster")
+
+plot12 <-  kmeans_results_a %>%
+  ggplot(aes(x = donation_interval, y = cluster)) + 
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "violet") +
+  labs(x = "donation_interval", y="Cluster")
+
+plot13 <-  kmeans_results_b %>%
+  ggplot(aes(x = SUMtotal, y = cluster)) + 
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "green") +
+  labs(x = "SUMtotal", y="Cluster")
+
+plot14 <-  kmeans_results_b %>%
+  ggplot(aes(x = SUMaverage, y = cluster)) + 
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "green") +
+  labs(x = "SUMaverage", y="Cluster")
+
+plot15 <-  kmeans_results_b %>%
+  ggplot(aes(x = COUNTaverage, y = cluster)) + 
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "green") +
+  labs(x = "COUNTaverage", y="Cluster")
+
+plot16 <-  kmeans_results_b %>%
+  ggplot(aes(x = COUNTtotal, y = cluster)) + 
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "green") +
+  labs(x = "COUNTtotal", y="Cluster")
+
+plot17 <-  kmeans_results_b %>%
+  ggplot(aes(x = days_since_last_payment, y = cluster)) + 
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "green") +
+  labs(x = "days since payment", y="Cluster")
+
+plot18 <-  kmeans_results_b %>%
+  ggplot(aes(x = merchandise_any, y = cluster)) + 
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "green") +
+  labs(x = "merchandise_any", y="Cluster")
+
+plot19 <-  kmeans_results_b %>%
+  ggplot(aes(x = num_of_donation_years, y = cluster)) + 
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "green") +
+  labs(x = "num donations year", y="Cluster")
+
+plot20 <-  kmeans_results_b %>%
+  ggplot(aes(x = donation_interval, y = cluster)) + 
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "green") +
+  labs(x = "donation_interval", y="Cluster")
+
+```
+```{r}
+multiplot(plot5,plot6,plot13,plot14,cols=2)
+```
+
+
+```{r}
+multiplot(plot7,plot8,plot15,plot16,cols=2)
+```
+
+```{r}
+multiplot(plot9,plot10,plot17,plot18,cols=2)
+```
+
+```{r}
+multiplot(plot11,plot12,plot19,cols=2)
+```
 
