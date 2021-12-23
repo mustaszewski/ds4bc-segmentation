@@ -294,49 +294,58 @@ fviz_pca_var(pca_res_b,
 ```
 
 
-# Multiplots
+**Multiplots**
+
+In this section we would like to take closer look at the different clusters of both approaches in order to get a better feel for the different clusters. 
+Let's check out the categorical variables like "Bundesland" or "Gender" first.
 
 
 ```{r}
 p1 = ggplot(data = kmeans_results_a, aes(y = cluster)) +
   geom_bar(aes(fill = Bundesland)) +
-  ggtitle("Count of Clusters by Bundesland K5") +
+  ggtitle("Count of Clusters by c K5") +
   theme(plot.title = element_text(hjust = 0.5))
-```
 
-```{r}
+
 p2 = ggplot(data = kmeans_results_b, aes(y = cluster)) +
   geom_bar(aes(fill = Bundesland)) +
   ggtitle("Count of Clusters by Bundesland K4") +
   theme(plot.title = element_text(hjust = 0.5))
-```
 
 
-```{r}
 p3 = ggplot(data = kmeans_results_a, aes(y = cluster)) +
   geom_bar(aes(fill = Gender)) +
   ggtitle("Count of Clusters by Gender K5") +
   theme(plot.title = element_text(hjust = 0.5))
-```
 
-```{r}
+
 p4 = ggplot(data = kmeans_results_b, aes(y = cluster)) +
   geom_bar(aes(fill = Gender)) +
   ggtitle("Count of Clusters by Gender K4") +
   theme(plot.title = element_text(hjust = 0.5))
-```
 
-```{r}
+
 p5 = ggplot(data = kmeans_results_a, aes(y = cluster)) +
   geom_bar(aes(fill = XMAS_donor)) +
   ggtitle("Count of Clusters by XMAS_donor K5") +
   theme(plot.title = element_text(hjust = 0.5))
-```
 
-```{r}
+
 p6 = ggplot(data = kmeans_results_b, aes(y = cluster)) +
   geom_bar(aes(fill = XMAS_donor)) +
   ggtitle("Count of Clusters by XMAS_donor K4") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+p7 = ggplot(data = kmeans_results_a, aes(y = cluster)) +
+  geom_bar(aes(fill = merchandise_any)) +
+  ggtitle("Count of Clusters by merchandise any K5") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+p8 = ggplot(data = kmeans_results_b, aes(y = cluster)) +
+  geom_bar(aes(fill = merchandise_any)) +
+  ggtitle("Count of Clusters by merchandise any K4") +
   theme(plot.title = element_text(hjust = 0.5))
 ```
 
@@ -344,115 +353,170 @@ p6 = ggplot(data = kmeans_results_b, aes(y = cluster)) +
 multiplot(p1,p3,p5,p2,p4,p6,cols=2)
 ```
 
+
+```{r}
+multiplot(p7,p8,cols=2)
+```
+
+**Interpretation**
+
+We can see the algorithm didn't really cluster donors by any of these variables. We can therefore assume, that there are no significant differences between genders or region that could account for a higher willingness to donate. All of the information these charts provide can be found in the EDA as well.
+
 ```{r}
 ggplot(data = kmeans_results_a, aes(y = cluster)) +
   geom_bar(aes(fill = generation_moniker)) +
   ggtitle("Count of Clusters by generation") +
   theme(plot.title = element_text(hjust = 0.5))
 ```
+**Clusterin by generation**
 
-```{r}
-ggplot(data = kmeans_results_b, aes(y = cluster)) +
-  geom_bar(aes(fill = generation_moniker)) +
-  ggtitle("Count of Clusters by generation") +
-  theme(plot.title = element_text(hjust = 0.5))
-```
+We only accounted for generation in approach A, because there are a lot of missing values when it comes to age. So we excluded them in approach B.
+But we can also see that the clustering was not determined by generation or purchases of merchandise either.
+What we can see here though is that cluster 2, which contains the biggest donors, has view Millennials in it, which was to be expected since younger people have less money to donate.
+
+Since the categorical variables didn't generate much insight, we will take a closer look at the numerical variables.
+
 ```{r}
 plot5 <-  kmeans_results_a %>%
   ggplot(aes(x = SUMtotal, y = cluster)) + 
-    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "violet") +
-  labs(x = "SUMtotal", y="Cluster")
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .2,  color = "violet") +
+  labs(x = "SUMtotal", y="Cluster") + 
+  scale_x_log10()
 
 plot6 <-  kmeans_results_a %>%
   ggplot(aes(x = SUMaverage, y = cluster)) + 
-    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "violet") +
-  labs(x = "SUMaverage", y="Cluster")
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .2,  color = "violet") +
+  labs(x = "SUMaverage", y="Cluster") + 
+  scale_x_log10()
 
 plot7 <-  kmeans_results_a %>%
   ggplot(aes(x = COUNTaverage, y = cluster)) + 
-    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "violet") +
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .2,  color = "violet") +
   labs(x = "COUNTaverage", y="Cluster")
 
 plot8 <-  kmeans_results_a %>%
   ggplot(aes(x = COUNTtotal, y = cluster)) + 
-    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "violet") +
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .2,  color = "violet") +
   labs(x = "COUNTtotal", y="Cluster")
 
 plot9 <-  kmeans_results_a %>%
   ggplot(aes(x = days_since_last_payment, y = cluster)) + 
-    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "violet") +
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .2,  color = "violet") +
   labs(x = "days since payment", y="Cluster")
-
-plot10 <-  kmeans_results_a %>%
-  ggplot(aes(x = merchandise_any, y = cluster)) + 
-    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "violet") +
-  labs(x = "merchandise_any", y="Cluster")
 
 plot11 <-  kmeans_results_a %>%
   ggplot(aes(x = num_of_donation_years, y = cluster)) + 
-    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "violet") +
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .2,  color = "violet") +
   labs(x = "num donations year", y="Cluster")
 
 plot12 <-  kmeans_results_a %>%
   ggplot(aes(x = donation_interval, y = cluster)) + 
-    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "violet") +
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .2,  color = "violet") +
   labs(x = "donation_interval", y="Cluster")
 
 plot13 <-  kmeans_results_b %>%
   ggplot(aes(x = SUMtotal, y = cluster)) + 
-    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "green") +
-  labs(x = "SUMtotal", y="Cluster")
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .2,  color = "green") +
+  labs(x = "SUMtotal", y="Cluster") + 
+  scale_x_log10()
 
 plot14 <-  kmeans_results_b %>%
   ggplot(aes(x = SUMaverage, y = cluster)) + 
-    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "green") +
-  labs(x = "SUMaverage", y="Cluster")
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .2,  color = "green") +
+  labs(x = "SUMaverage", y="Cluster") + 
+  scale_x_log10()
 
 plot15 <-  kmeans_results_b %>%
   ggplot(aes(x = COUNTaverage, y = cluster)) + 
-    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "green") +
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .2,  color = "green") +
   labs(x = "COUNTaverage", y="Cluster")
 
 plot16 <-  kmeans_results_b %>%
   ggplot(aes(x = COUNTtotal, y = cluster)) + 
-    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "green") +
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .2,  color = "green") +
   labs(x = "COUNTtotal", y="Cluster")
 
 plot17 <-  kmeans_results_b %>%
   ggplot(aes(x = days_since_last_payment, y = cluster)) + 
-    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "green") +
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .2,  color = "green") +
   labs(x = "days since payment", y="Cluster")
-
-plot18 <-  kmeans_results_b %>%
-  ggplot(aes(x = merchandise_any, y = cluster)) + 
-    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "green") +
-  labs(x = "merchandise_any", y="Cluster")
 
 plot19 <-  kmeans_results_b %>%
   ggplot(aes(x = num_of_donation_years, y = cluster)) + 
-    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "green") +
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .2,  color = "green") +
   labs(x = "num donations year", y="Cluster")
 
 plot20 <-  kmeans_results_b %>%
   ggplot(aes(x = donation_interval, y = cluster)) + 
-    geom_jitter(width = .02, height = 0, size = 2, alpha = .6,  color = "green") +
+    geom_jitter(width = .02, height = 0, size = 2, alpha = .2,  color = "green") +
   labs(x = "donation_interval", y="Cluster")
 
 ```
+
 ```{r}
 multiplot(plot5,plot6,plot13,plot14,cols=2)
 ```
+**SUMtotal and SUMaverage**
+
+These plots are a bit harder to read and the scale is rather large with most of the donations being so small. So these numbers have been put on a log scale, which improves readability. You can see that A has the the best donors in cluster 2,3 and 4 when it comes to the amount of money donated. While 5 and 1 are low.
+
+Approach B has the best donors in cluster 3 and 2. Cluster 2 and 4 both have a wide spread and are on the lower end.
 
 
 ```{r}
 multiplot(plot7,plot8,plot15,plot16,cols=2)
 ```
 
+**COUNTaverage and COUNTtotal**
+
+A has the frequent donors in cluster 2, B in 3. 
+All the other clusters are actually rather similar in count and average for approach B.
+For A you have cluster 5 as the "one timers". 1,3 and 4 are quite close.
+
 ```{r}
-multiplot(plot9,plot10,plot17,plot18,cols=2)
+multiplot(plot9,plot17,cols=1)
 ```
+**Days since payment**
+
+Days since payment shows a clearer picture. A has cluster 1 where the last payment has been a while ago. Same in cluster 2 for approach B.
 
 ```{r}
 multiplot(plot11,plot12,plot19,cols=2)
 ```
+**Number of donations in a year**
+
+This one is very interesting. Although the plot is not ideal for this variable, it shows how cluster A5 has the "one timers" in it. A2 has between 1 and 5 donations a year so it doesn't just contain the big donors, but also the frequent spenders. It would be interesting to take a closer look at the once a year donors in A2 and see if those come from inheritances.
+B1 has has no "once a year" donors in it, while B3 is similar to A2.
+
+**Conclusions**
+
+Looking at the plots above, we can tell that the clustering with 5 clusters manages to separate the donors a bit more clearly in some regards than approach B with 4 clusters. The demographic variables aren't as meaningful as one might expect, although age is relevant. Other demographic variables like income and level of education would have been interesting but are not contained in this data set.
+
+We will try and categorize the clusters in approach A to determine which groups should be focused on in our marketing efforts. Afterwards we will compare the the results of KMeans with those of RFM.
+
+**A2 - The Lonely Heroes**
+
+These donors are donating the most in total, they also donate very frequently. If we look at the outliers when it comes to the amounts donated, we can safely assume that there are inheritances contained in this group. This assumption is supported by the generational charts above. A2 contains mostly people that would be considered the "silent" generation and the "boomers". This makes sense, if we look at wealth distributions because older people generally have more money saved up. This cluster also contains the fewest families, which also supports this.
+
+These old donors are very important and should be treated accordingly. They donate considerable amounts and might bequeath their capital upon death.
+
+**A5 - The One Timers**
+
+This cluster contains one time donors. They donate small amounts and don't come back. They also don't buy any merchandise. 
+It would be interesting to see how they can be convinced in the first place and why they only donated once. This would be market research though. Trying to convince a sizable chunk of this cluster to donate more would be difficult without further research. Luckily this is the smallest cluster
+
+**A3/A4 - The (Wo)Men In The Middle**
+
+These groups donate middle to high amounts in regular intervals. They might contain donors with donation plans. These are already in the system and generate a good portion of donations. They do buy merchandise as well. With these it would make sense to ensure that we keep in touch. It any of these people stop to donate in the regular interval we should approach them and inquire about the reason. Especially A3 contains a lot of christmas donors and mellenials.
+
+**A1 - The Long Inbetweeners**
+
+This group seems to be a bit of a left over group. They don't particularly stand out in any way, except that they do donate frequently but with long periods between donations. They buy merch an contain the most families respectively.
+
+# RFM vs. KMeans
+
+The data set doesn't contain many demographic variables and most of the data is centered around the donations themselves, like the amounts, frequencies and intervals. KMeans did suggest a smaller amount of clusters and was a bit cumbersome to analyze and interpret. It's also significantly less intuitive than RFM.
+RFM was rather simple to set up and the names of the different groups tell you something about them right of the bat. There are more clusters in the RFM and the differences between them are more nuanced, which makes quite a lot of sense for marketing purposes. 
+
+With this kind of data set RFM seems to be the method of choice. It's quick and simple and the risk of data snooping is comparably low. If the data set would contain more demographic data KMeans would make sense, but it requires a big amount of knowledge and reasoning.
 
