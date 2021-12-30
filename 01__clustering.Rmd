@@ -1,8 +1,14 @@
 ---
-title: "01_clustering"
-author: "EmanuelGregorMichaelPeter"
-date: "10 12 2021"
-output: html_document
+title: "Clustering"
+author:
+  - "Emanuel"
+  - "Gregor"
+  - "Michael"
+  - "Peter"
+date: "2021-12-29"
+output:
+  html_document:
+    df_print: paged
 ---
 
 ```{r setup, include=FALSE}
@@ -577,7 +583,7 @@ This group seems to be a bit of a left over group. They don't particularly stand
 out in any way, except that they do donate frequently but with long periods
 between donations. They buy merch an contain the most families respectively.
 
-# RFM vs. KMeans
+## RFM vs. KMeans
 
 The data set doesn't contain many demographic variables and most of the data is
 centered around the donation behaviour itself, like the amounts, frequencies and
