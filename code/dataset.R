@@ -86,10 +86,10 @@ apply_feature_engineering <- function(customer_data) {
                    COUNT2019,
   
       # total donation amount over all years
-      SUMtotal = SUM2015+
-                 SUM2016+
-                 SUM2017+
-                 SUM2018+
+      SUMtotal = SUM2015 +
+                 SUM2016 +
+                 SUM2017 +
+                 SUM2018 +
                  SUM2019,
   
       # average donation amount

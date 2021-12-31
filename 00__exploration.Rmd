@@ -1,11 +1,11 @@
 ---
 title: "Exploration and RFM"
 author:
-  - "Emanuel"
-  - "Gregor"
-  - "Michael"
-  - "Peter"
-date: "2021-12-29"
+  - "Aichinger-Fankhauser Peter"
+  - "Beyerle Gregor"
+  - "Reckmeyer Emanuel Elias"
+  - "Ustaszewski Michael"
+date: "2021-12-30"
 output:
   html_document:
     df_print: paged
@@ -47,24 +47,34 @@ output:
 ### Expected Output
 
 - Deliverable: Pitch presentation
-- Deadline: December 30th, 2021
-
-## Preprocessing
+- Deadline: December 31th, 2021
 
 ```{r setup, include=FALSE}
 source("code/dataset.R")
 
 library(rfm)
 
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```
+
+## Preprocessing
+
+The data set for this analysis contains 21 attributes that might or might not
+contribute to how we would group donors. Most of them are related to whether there
+were donations or merchandise purchases in a respective year. The code book gives
+a complete picture of each attribute.
 
 ```{r}
 feature_description_original <- readxl::read_excel(
-  "data/feature_description.xlsx")
+  "data/feature_description.xlsx", col_names = c("Name", "Description"))
 
 feature_description_original
 ```
+
+The first inspection of the data is done with relatively unprocessed attributes.
+A quick skim shows that more than a third of birth dates are missing and that around
+11% of donors have only donated once. Other than that we see mostly skewed distributions
+in the numerical variables with rather long tails.
 
 ```{r}
 customer_segmentation_raw <- read_raw_customer_data("data/customer_segmentation_test.csv")
@@ -74,10 +84,14 @@ skimr::skim(customer_segmentation_raw)
 
 ### Feature Engineering
 
-```{r}
-zip_code_list <- readxl::read_excel("data/PLZ_Verzeichnis-20211201.xlsx")
-zip_code_list
-```
+In order to extract more information out of the present variables we want to enrich
+the existing data with additional information, calculate donation/merchandise
+summaries and prepare the needed fields for a simple RFM analysis.
+
+First, we start out with additional data we took from the Austrian Postal Services
+who maintain lists of historical postal codes, historical town names and their most
+recent counterparts. This gives us information about the towns and states for most
+donors.
 
 ```{r}
 customer_segmentation_with_zip <- enrich_with_postal_info(
@@ -88,81 +102,163 @@ customer_segmentation_with_zip <- enrich_with_postal_info(
 customer_segmentation_with_zip
 ```
 
+The additional feature engineering is applied to extract additional attributes like:
+
+- Year of donor's birthday
+- Age of donor at last donation
+- Generational moniker (Pew Research Generation Names)
+- Total count of donations
+- Total donation amount
+- Average donation amount per year
+- Average amount of donations per year
+- Last payment month
+- Penultimate payment month
+- Status if donor is a "Christmas Donor" or not
+- Interval between last and penultimate donation in days
+- Days since last payment
+- Flag if there were any merchandise purchases over the years
+- The number of years in which there were donations
+
 ```{r}
 customer_segmentation_first_prepro <- apply_feature_engineering(customer_segmentation_with_zip)
 skimr::skim(customer_segmentation_first_prepro)
 ```
 
 ```{r}
-# Maybe it's a good idea to take out all the NAs for age. Obviously we lose a lot of rows, but 251000 left still seems plenty to me.
-customer_segmentation_complete <- customer_segmentation_first_prepro %>% drop_na(year_born)
+customer_segmentation_complete <- customer_segmentation_first_prepro %>% drop_na()
 customer_segmentation_complete
 ```
 
+For certain analyses it might be good to throw out all observations in which there
+are NA values. This still leaves us with `r NROW(customer_segmentation_complete)` rows.
+
 ### Visual Exploration
+
+Before looking into unsupervised learning methods it makes sense to build an intuition
+for the data set using simple visuals. If there are very obvious patterns we might
+be able to see it there. One of the first things we could inspect is whether the
+different genders have different donations behaviors.
+
+This hypothesis wouldn't be validated when looking at the number of "Christmas Donors"
+ - meaning people who donate in December (or November/January) or during all other
+ months of the year. We don't see widely different behaviors between the genders here
+ but we can validate the notion that a big chunk of all donations are done in the winter
+ months. Targetting people before the "giving seasons" could yield good results.
 
 ```{r}
 ggplot(customer_segmentation_first_prepro, aes(XMAS_donor)) +
-  geom_bar() +
+  geom_bar(fill = "#76B856") +
   facet_wrap(~Gender)
 ```
+
+Looking at the patterns regarding the regularity with which people donate we wouldn't
+see very apparent differences in the general patterns between genders as well. We see
+that a large amount of donors donated only for one year.
 
 ```{r}
 ggplot(customer_segmentation_first_prepro, aes(num_of_donation_years)) +
-  geom_bar() +
+  geom_bar(fill = "#76B856") +
   facet_wrap(~Gender)
 ```
 
+Looking at the donation sums we see a distribution favoring low amounts with very
+long tails. They are so long in fact, that if we don't limit our visual analysis to
+sums smaller than 3000 we don't see a lot. Looking at differences by gender we again
+see rather similar patterns.
+
 ```{r}
-ggplot(customer_segmentation_first_prepro %>% filter(SUMtotal > 0 & SUMtotal < 5000), aes(x = SUMtotal)) +
-  geom_histogram(binwidth = 100) +
+ggplot(customer_segmentation_first_prepro %>% filter(SUMtotal > 0 & SUMtotal < 3000), aes(x = SUMtotal)) +
+  geom_histogram(fill = "#76B856", color = "white", binwidth = 50) +
   facet_wrap(~Gender)
 ```
+
+As we already saw with the "Christmas Donors" we can see that people give more in
+the winter months. Again the different genders (at least the ones we distinguish
+in this data set) behave rather similarly.
 
 ```{r}
 ggplot(customer_segmentation_first_prepro, aes(LastPaymentMONTH)) +
-  geom_bar() +
+  geom_bar(fill = "#76B856") +
   facet_wrap(~Gender)
 ```
+
+It shouldn't be surprising that the same view on the penultimate payment date is
+the view we had on the last payment month lagged by one month.
 
 ```{r}
 ggplot(customer_segmentation_first_prepro, aes(PenultimatePaymentMONTH)) +
-  geom_bar() +
+  geom_bar(fill = "#76B856") +
   facet_wrap(~Gender)
 ```
 
+Looking at the different generations we can see that the older generations
+(silent and boomer) have rather similar behaviors while the younger people donate
+far less. This would make sense as older people have more expandable income. Also
+looking at the general amount we only have very few samples of the young millenial
+and z generation members.
+
 ```{r}
-ggplot(customer_segmentation_first_prepro, aes(num_of_donation_years)) +
-  geom_bar() +
+ggplot(customer_segmentation_complete, aes(num_of_donation_years)) +
+  geom_bar(fill = "#76B856") +
   facet_wrap(~generation_moniker)
 ```
 
+We basically see the same result looking at the age distribution of donors. The
+mean of `r mean(customer_segmentation_complete$age_at_last_donation)` and the median
+of `r median(customer_segmentation_complete$age_at_last_donation)` are rather apparent.
+
 ```{r}
 ggplot(customer_segmentation_first_prepro %>% drop_na(age_at_last_donation), aes(age_at_last_donation)) +
-  geom_histogram(binwidth = 5)
+  geom_histogram(fill = "#76B856", color = "white", binwidth = 5)
 ```
+
+Looking at the count of donations we see a very similar picture as we've already
+observed looking at the donation sums. This makes sense as there are many single
+donors.
 
 ```{r}
 ggplot(customer_segmentation_first_prepro %>% filter(COUNTtotal < (7 * 6)), aes(COUNTtotal)) +
-  geom_histogram(binwidth = 1)
+  geom_histogram(fill = "#76B856", color = "white", binwidth = 1)
 ```
+
+Looking at the donation interval we get the confirmation that people who donate more
+than once donate at very similar times.
+
 ```{r}
 ggplot(customer_segmentation_first_prepro %>% drop_na(donation_interval) %>% filter(donation_interval < (360 * 5)), aes(donation_interval)) +
-  geom_histogram(binwidth = 30)
+  geom_histogram(fill = "#76B856", color = "white", binwidth = 30)
 ```
+
+It isn't odd to see that looking at the days since the last donation in respect
+to a fixed reference date shows the mirror image of the above graph which further
+cements our hypothesis that people tend to donate at similar times.
 
 ```{r}
 ggplot(customer_segmentation_first_prepro, aes(days_since_last_payment)) +
-  geom_histogram(binwidth = 30)
+  geom_histogram(fill = "#76B856", color = "white", binwidth = 30)
 ```
+
+We get a very interesting look at the donation sums when plotting them over the
+birth years of the donors. Unfortunately we don't have all the donation data of
+donors over their complete lifetime but from this view we could assume that for
+most donors there is a plateau sum they will reach over their donor life time. The
+cliffs to the left and right will most likely be effects of left- and right-censored
+data. As some donations are exremely high we filter out everything six standard
+deviations above the mean.
 
 ```{r}
 mean_total_sum <- customer_segmentation_first_prepro$SUMtotal %>% mean(na.rm = TRUE)
 sd_total_sum <- customer_segmentation_first_prepro$SUMtotal %>% sd(na.rm = TRUE)
 
 ggplot(customer_segmentation_first_prepro %>% drop_na(year_born) %>% filter(SUMtotal < (mean_total_sum + sd_total_sum * 6)), aes(year_born, SUMtotal)) +
-  geom_point(alpha = 1 / 10)
+  geom_point(color = "#76B856", fill = "#76B856", alpha = 1 / 10)
 ```
+
+As we have additional data on the states in which donors live we could look
+at donor counts and sums in respect to their state. Looking at count we would
+see widely different numbers. It is important to consider, though, that these
+counts should are expected to be different because e.g.: Vienna is the biggest state
+so we expect a lot of donors.
 
 ```{r}
 donors_per_state <- customer_segmentation_first_prepro %>%
@@ -172,8 +268,12 @@ donors_per_state <- customer_segmentation_first_prepro %>%
   ungroup()
   
 ggplot(donors_per_state, aes(Bundesland, n)) +
-  geom_col()
+  geom_col(fill = "#76B856")
 ```
+
+When adjusting the counts to represent donors per 100,000 inhabitants we see an
+over representation of Lower Austria and an under representation of Vorarlberg and
+Vienna.
 
 ```{r}
 # taken from https://de.statista.com/statistik/daten/studie/75396/umfrage/entwicklung-der-bevoelkerung-in-oesterreich-nach-bundesland-seit-1996/
@@ -203,8 +303,12 @@ donors_per_state_per_100_000_inhabitants <- donors_per_state %>%
   )
 
 ggplot(donors_per_state_per_100_000_inhabitants, aes(Bundesland, n)) +
-  geom_col()
+  geom_col(fill = "#76B856")
 ```
+
+Looking at the donation sums we see a similar behavior as we have seen with the counts.
+The last visual analysis should have proven to us that this trivial example is not
+very useful.
 
 ```{r}
 sums_per_state <- customer_segmentation_first_prepro %>%
@@ -213,8 +317,11 @@ sums_per_state <- customer_segmentation_first_prepro %>%
   ungroup()
 
 ggplot(sums_per_state, aes(Bundesland, sum_donations)) +
-  geom_col()
+  geom_col(fill = "#76B856")
 ```
+
+Interestingly, when we look at the sums per inhabitant of a state we see an over
+representation of Viennese money while Vorarlberg is even less present.
 
 ```{r}
 sums_per_state_per_inhabitant <- sums_per_state %>%
@@ -233,8 +340,15 @@ sums_per_state_per_inhabitant <- sums_per_state %>%
   )
 
 ggplot(sums_per_state_per_inhabitant, aes(Bundesland, sum_donations)) +
-  geom_col()
+  geom_col(fill = "#76B856")
 ```
+
+If we want to be even more precise when targeting potential donors we could even
+adjust the sums by the spending power in each state in respect to the one with the
+highest spending power (Lower Austria). Looking at this graph we might want to
+look into Tyrol, Vorarlberg and Vienna. While Tyrol and Vienna are appearing to
+be rather over represented in respect to money donated Vorarlberg appears to be
+seriously underserviced.
 
 ```{r}
 # taken from https://de.statista.com/statistik/daten/studie/373051/umfrage/kaufkraft-je-einwohner-in-oesterreich-nach-bundeslaendern/
@@ -264,7 +378,7 @@ sums_per_state_per_inhabitant_adjusted <- sums_per_state_per_inhabitant %>%
   )
 
 ggplot(sums_per_state_per_inhabitant_adjusted, aes(Bundesland, sum_donations)) +
-  geom_col()
+  geom_col(fill = "#76B856")
 ```
 
 ### RFM
@@ -274,7 +388,7 @@ Monetary Value. Using the `rfm` package, RFM scores can be computed either on
 raw transaction data (one row per transaction), or on aggregated customer data
 (one row per customer). For the former, the method `rfm_table_order` can be
 used, for the latter either `rfm_table_customer` or `rfm_table_customer2`.
-Since our dataset represents aggregated customer data, the latter should be
+Since our data set represents aggregated customer data, the latter should be
 used. It can be computed directly from the raw data upon adding the two
 variables `SUMtotal` and `COUNTtotal`:
 

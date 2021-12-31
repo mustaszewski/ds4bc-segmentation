@@ -1,11 +1,11 @@
 ---
 title: "Clustering"
 author:
-  - "Emanuel"
-  - "Gregor"
-  - "Michael"
-  - "Peter"
-date: "2021-12-29"
+  - "Aichinger-Fankhauser Peter"
+  - "Beyerle Gregor"
+  - "Reckmeyer Emanuel Elias"
+  - "Ustaszewski Michael"
+date: "2021-12-30"
 output:
   html_document:
     df_print: paged
@@ -19,7 +19,7 @@ library(factoextra)
 library(corrplot)
 library(Rmisc)
 
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```
 
 ## Clustering
