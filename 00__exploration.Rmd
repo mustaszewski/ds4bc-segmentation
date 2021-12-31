@@ -1,13 +1,20 @@
 ---
-title: "R Notebook"
+title: "Exploration and RFM"
+author:
+  - "Aichinger-Fankhauser Peter"
+  - "Beyerle Gregor"
+  - "Reckmeyer Emanuel Elias"
+  - "Ustaszewski Michael"
+date: "2021-12-30"
 output:
   html_document:
     df_print: paged
 ---
 
-# Customer Segmentation Group work
+# Customer Segmentation Group Work
 
 ## Instructions
+
 - Imagine you and your team mates have just founded a Data Science start up. Your
   first customer is a fundraising organization asking for support with regard to
   making most of their donor and transaction data.
@@ -24,6 +31,7 @@ output:
   feature descriptions ...
 
 ### Tasks
+
 - Form a group of 3 to 4 persons
 - Get accustomed to the data and have an explorative look at it.
 - Think your variables that might be added to or derived from the dataset with
@@ -37,243 +45,235 @@ output:
 - Compare the model outputs and formulate a recommendation for the customer
 
 ### Expected Output
-- Deliverable: Pitch presentation
-- Deadline: December 17th, 2021
 
-## Prepro
-```{r}
-library(tidyverse, readr)
+- Deliverable: Pitch presentation
+- Deadline: December 31th, 2021
+
+```{r setup, include=FALSE}
+source("code/dataset.R")
+
+library(rfm)
+
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```
+
+## Preprocessing
+
+The data set for this analysis contains 21 attributes that might or might not
+contribute to how we would group donors. Most of them are related to whether there
+were donations or merchandise purchases in a respective year. The code book gives
+a complete picture of each attribute.
 
 ```{r}
 feature_description_original <- readxl::read_excel(
-  "data/feature_description.xlsx")
+  "data/feature_description.xlsx", col_names = c("Name", "Description"))
+
 feature_description_original
 ```
 
+The first inspection of the data is done with relatively unprocessed attributes.
+A quick skim shows that more than a third of birth dates are missing and that around
+11% of donors have only donated once. Other than that we see mostly skewed distributions
+in the numerical variables with rather long tails.
 
 ```{r}
-customer_segmentation_raw <- readr::read_csv2(
-  "data/customer_segmentation_test.csv",
-  col_types = list(col_integer(), col_character(), col_character(), col_character(),
-                col_double(), col_double(), col_character(), col_double(), col_double(),
-                col_character(), col_double(), col_double(), col_character(), col_double(),
-                col_double(), col_character(), col_double(), col_double(), col_character(),
-                col_character(), col_character()),
-  guess_max = 400000
-)
-```
-
-
-```{r}
-
-customer_segmentation_raw <- customer_segmentation_raw %>% mutate(
-  `Date of Birth` = lubridate::dmy(`Date of Birth`),
-  Gender = as.factor(Gender),
-  MERCHANDISE2015 = as.factor(MERCHANDISE2015),
-  MERCHANDISE2016 = as.factor(MERCHANDISE2016),
-  MERCHANDISE2017 = as.factor(MERCHANDIESE2017),
-  MERCHANDISE2018 = as.factor(MERCHANDIESE2018),
-  MERCHANDISE2019 = as.factor(MERCHANDISE2019),
-  LastPaymentDate = lubridate::dmy(LastPaymentDate),
-  PenultimatePaymentDate = lubridate::dmy(PenultimatePaymentDate)
-) %>% select(-c(MERCHANDIESE2017, MERCHANDIESE2018)) %>%
-  rename(DateOfBirth = `Date of Birth`,
-         ID =`Customer Number`)
+customer_segmentation_raw <- read_raw_customer_data("data/customer_segmentation_test.csv")
 
 skimr::skim(customer_segmentation_raw)
 ```
 
-### feature engineering
+### Feature Engineering
 
-Bin hier sehr offen für Verbesserungsvorschläge ^^
+In order to extract more information out of the present variables we want to enrich
+the existing data with additional information, calculate donation/merchandise
+summaries and prepare the needed fields for a simple RFM analysis.
+
+First, we start out with additional data we took from the Austrian Postal Services
+who maintain lists of historical postal codes, historical town names and their most
+recent counterparts. This gives us information about the towns and states for most
+donors.
 
 ```{r}
-zip_code_list <- readxl::read_excel("data/PLZ_Verzeichnis-20211201.xls")
-zip_code_list
-```
-
-```{r}
-customer_segmentation_with_zip <- customer_segmentation_raw %>%
-  left_join(zip_code_list, by = c("Postcode" = "PLZ")) %>%
-  select(-c(`gültig ab`, `gültig bis`, NamePLZTyp, intern_extern, adressierbar, Postfach)) %>%
-  drop_na(Postcode, Ort, Bundesland) %>%
-  mutate(Postcode = as.factor(Postcode),
-         Bundesland = as.factor(Bundesland))
+customer_segmentation_with_zip <- enrich_with_postal_info(
+  customer_segmentation_raw,
+  "data/PLZ_Verzeichnis-20211201.xlsx"
+)
 
 customer_segmentation_with_zip
 ```
 
+The additional feature engineering is applied to extract additional attributes like:
+
+- Year of donor's birthday
+- Age of donor at last donation
+- Generational moniker (Pew Research Generation Names)
+- Total count of donations
+- Total donation amount
+- Average donation amount per year
+- Average amount of donations per year
+- Last payment month
+- Penultimate payment month
+- Status if donor is a "Christmas Donor" or not
+- Interval between last and penultimate donation in days
+- Days since last payment
+- Flag if there were any merchandise purchases over the years
+- The number of years in which there were donations
+
 ```{r}
-# here we define, which months should be understood as "christmas months" to define "XMAS_donation"
-XMAS_months = c(11,
-                12,
-                1)
-
-# this date will be used as the reference for this analysis
-reference_date <- lubridate::ymd("2021-12-17")
-
-customer_segmentation_first_prepro <- customer_segmentation_with_zip %>%
-  mutate(
-    # year of customer's birthday
-    year_born = lubridate::year(DateOfBirth),
-    
-    # age of donors at their last donation
-    age_at_last_donation = lubridate::interval(DateOfBirth, LastPaymentDate) %>%
-      as.numeric("years") %>%
-      as.integer(),
-    
-    generation_moniker = case_when(
-      year_born <= 1945 ~ "silent" ,
-      year_born <= 1964 ~ "boomer",
-      year_born <= 1980 ~ "x",
-      year_born <= 1996 ~ "millennial",
-      year_born <= 2012 ~ "z"
-    ) %>% as_factor(),
-
-    # total number of donations over all years
-    COUNTtotal = COUNT2015+
-                 COUNT2016+
-                 COUNT2017+
-                 COUNT2018+
-                 COUNT2019,
-
-    # total donation amount over all years
-    SUMtotal = SUM2015+
-               SUM2016+
-               SUM2017+
-               SUM2018+
-               SUM2019,
-
-    # average donation amount
-    SUMaverage = SUMtotal / COUNTtotal,
-    
-    # average number of donations per year over observation period
-    COUNTaverage = COUNTtotal/5,
-
-    # month of the last payment
-    LastPaymentMONTH = lubridate::month(LastPaymentDate) %>% as.factor(),
-
-    # month of second to last payment
-    PenultimatePaymentMONTH = lubridate::month(PenultimatePaymentDate) %>% as.factor(),
-
-    # year of the last payment
-    LastPaymentYEAR = lubridate::year(LastPaymentDate),
-
-    # year of second to last payment
-    PenultimatePaymentYEAR = lubridate::year(PenultimatePaymentDate),
-
-    # THIS ONE NEEDS WORK
-    # status as christmas donor if the last two payments were around christmas,
-    # but we have to tweak the time interval (is Nov to Jan too large?)
-    # also: what about people that only have one payment in total, that should be considered. The "maybe" status is shady at best
-    XMAS_donor = as_factor(case_when(LastPaymentMONTH %in% XMAS_months & PenultimatePaymentMONTH %in% XMAS_months ~ "yes",
-                                     LastPaymentMONTH %in% XMAS_months ~ "maybe",
-                                     TRUE ~ "unlikely")),
-
-    # days between last and second to last payment
-    donation_interval = lubridate::day(lubridate::days(LastPaymentDate - PenultimatePaymentDate)),
-    
-    # days since the last payment in relation to our reference date
-    days_since_last_payment = as.integer(LastPaymentDate - reference_date),
-
-    # binary factor variable expressing if any merchandise was bought over the observation period (clumsily coded)
-    merchandise_any = as_factor(if_else(
-                                  !is.na(MERCHANDISE2015) & MERCHANDISE2015 != 0 |
-                                  !is.na(MERCHANDISE2016) & MERCHANDISE2016 != 0 |
-                                  !is.na(MERCHANDISE2017) & MERCHANDISE2017 != 0 |
-                                  !is.na(MERCHANDISE2018) & MERCHANDISE2018 != 0 |
-                                  !is.na(MERCHANDISE2019) & MERCHANDISE2019 != 0,
-                                  1,
-                                  0))) %>%
-
-  # grouping for the next mutation (num_of_donation_years)
-  group_by(ID) %>%
-
-  # number of years in which anything was donated (0-5)
-  mutate(num_of_donation_years = sum(COUNT2015 > 0,
-                                     COUNT2016 > 0,
-                                     COUNT2017 > 0,
-                                     COUNT2018 > 0,
-                                     COUNT2019 > 0, na.rm=T)) %>%
-
-  # ungrouping is important! ;)
-  # I learned that skimr tries to show its output based on groups if working with a grouped dataset... that crashed my computer twice ^^
-  ungroup() %>%
-
-  # remove variables that have no further use or
-  select(-c(DateOfBirth, PenultimatePaymentDate))
+customer_segmentation_first_prepro <- apply_feature_engineering(customer_segmentation_with_zip)
+skimr::skim(customer_segmentation_first_prepro)
 ```
 
 ```{r}
-customer_segmentation_first_prepro
-```
-
-
-
-```{r}
-customer_segmentation_first_prepro %>% skimr::skim()
-```
-
-```{r}
-#Maybe it's a good idea to take out all the NAs for age. Obviously we lose a lot of rows, but 251000 left still seems plenty to me.
-customer_segmentation_complete <- customer_segmentation_first_prepro %>% drop_na(year_born)
+customer_segmentation_complete <- customer_segmentation_first_prepro %>% drop_na()
 customer_segmentation_complete
 ```
 
+For certain analyses it might be good to throw out all observations in which there
+are NA values. This still leaves us with `r NROW(customer_segmentation_complete)` rows.
+
 ### Visual Exploration
+
+Before looking into unsupervised learning methods it makes sense to build an intuition
+for the data set using simple visuals. If there are very obvious patterns we might
+be able to see it there. One of the first things we could inspect is whether the
+different genders have different donations behaviors.
+
+This hypothesis wouldn't be validated when looking at the number of "Christmas Donors"
+ - meaning people who donate in December (or November/January) or during all other
+ months of the year. We don't see widely different behaviors between the genders here
+ but we can validate the notion that a big chunk of all donations are done in the winter
+ months. Targetting people before the "giving seasons" could yield good results.
 
 ```{r}
 ggplot(customer_segmentation_first_prepro, aes(XMAS_donor)) +
-  geom_bar() +
+  geom_bar(fill = "#76B856") +
   facet_wrap(~Gender)
 ```
+
+Looking at the patterns regarding the regularity with which people donate we wouldn't
+see very apparent differences in the general patterns between genders as well. We see
+that a large amount of donors donated only for one year.
 
 ```{r}
 ggplot(customer_segmentation_first_prepro, aes(num_of_donation_years)) +
-  geom_bar() +
-  facet_wrap(~generation_moniker)
-```
-
-```{r}
-ggplot(customer_segmentation_first_prepro %>% drop_na(age_at_last_donation), aes(age_at_last_donation)) +
-  geom_histogram(binwidth = 5)
-```
-
-```{r}
-ggplot(customer_segmentation_first_prepro %>% filter(SUMtotal > 0 & SUMtotal < 5000), aes(x = SUMtotal)) +
-  geom_histogram(binwidth = 100) +
+  geom_bar(fill = "#76B856") +
   facet_wrap(~Gender)
 ```
+
+Looking at the donation sums we see a distribution favoring low amounts with very
+long tails. They are so long in fact, that if we don't limit our visual analysis to
+sums smaller than 3000 we don't see a lot. Looking at differences by gender we again
+see rather similar patterns.
+
+```{r}
+ggplot(customer_segmentation_first_prepro %>% filter(SUMtotal > 0 & SUMtotal < 3000), aes(x = SUMtotal)) +
+  geom_histogram(fill = "#76B856", color = "white", binwidth = 50) +
+  facet_wrap(~Gender)
+```
+
+As we already saw with the "Christmas Donors" we can see that people give more in
+the winter months. Again the different genders (at least the ones we distinguish
+in this data set) behave rather similarly.
 
 ```{r}
 ggplot(customer_segmentation_first_prepro, aes(LastPaymentMONTH)) +
-  geom_bar() +
+  geom_bar(fill = "#76B856") +
   facet_wrap(~Gender)
 ```
+
+It shouldn't be surprising that the same view on the penultimate payment date is
+the view we had on the last payment month lagged by one month.
 
 ```{r}
 ggplot(customer_segmentation_first_prepro, aes(PenultimatePaymentMONTH)) +
-  geom_bar() +
+  geom_bar(fill = "#76B856") +
   facet_wrap(~Gender)
 ```
 
+Looking at the different generations we can see that the older generations
+(silent and boomer) have rather similar behaviors while the younger people donate
+far less. This would make sense as older people have more expandable income. Also
+looking at the general amount we only have very few samples of the young millenial
+and z generation members.
+
+```{r}
+ggplot(customer_segmentation_complete, aes(num_of_donation_years)) +
+  geom_bar(fill = "#76B856") +
+  facet_wrap(~generation_moniker)
+```
+
+We basically see the same result looking at the age distribution of donors. The
+mean of `r mean(customer_segmentation_complete$age_at_last_donation)` and the median
+of `r median(customer_segmentation_complete$age_at_last_donation)` are rather apparent.
+
+```{r}
+ggplot(customer_segmentation_first_prepro %>% drop_na(age_at_last_donation), aes(age_at_last_donation)) +
+  geom_histogram(fill = "#76B856", color = "white", binwidth = 5)
+```
+
+Looking at the count of donations we see a very similar picture as we've already
+observed looking at the donation sums. This makes sense as there are many single
+donors.
+
 ```{r}
 ggplot(customer_segmentation_first_prepro %>% filter(COUNTtotal < (7 * 6)), aes(COUNTtotal)) +
-  geom_histogram(binwidth = 1)
+  geom_histogram(fill = "#76B856", color = "white", binwidth = 1)
 ```
+
+Looking at the donation interval we get the confirmation that people who donate more
+than once donate at very similar times.
+
 ```{r}
 ggplot(customer_segmentation_first_prepro %>% drop_na(donation_interval) %>% filter(donation_interval < (360 * 5)), aes(donation_interval)) +
-  geom_histogram(binwidth = 30)
+  geom_histogram(fill = "#76B856", color = "white", binwidth = 30)
 ```
+
+It isn't odd to see that looking at the days since the last donation in respect
+to a fixed reference date shows the mirror image of the above graph which further
+cements our hypothesis that people tend to donate at similar times.
+
+```{r}
+ggplot(customer_segmentation_first_prepro, aes(days_since_last_payment)) +
+  geom_histogram(fill = "#76B856", color = "white", binwidth = 30)
+```
+
+We get a very interesting look at the donation sums when plotting them over the
+birth years of the donors. Unfortunately we don't have all the donation data of
+donors over their complete lifetime but from this view we could assume that for
+most donors there is a plateau sum they will reach over their donor life time. The
+cliffs to the left and right will most likely be effects of left- and right-censored
+data. As some donations are exremely high we filter out everything six standard
+deviations above the mean.
 
 ```{r}
 mean_total_sum <- customer_segmentation_first_prepro$SUMtotal %>% mean(na.rm = TRUE)
 sd_total_sum <- customer_segmentation_first_prepro$SUMtotal %>% sd(na.rm = TRUE)
 
 ggplot(customer_segmentation_first_prepro %>% drop_na(year_born) %>% filter(SUMtotal < (mean_total_sum + sd_total_sum * 6)), aes(year_born, SUMtotal)) +
-  geom_point(alpha = 1 / 10)
+  geom_point(color = "#76B856", fill = "#76B856", alpha = 1 / 10)
 ```
+
+As we have additional data on the states in which donors live we could look
+at donor counts and sums in respect to their state. Looking at count we would
+see widely different numbers. It is important to consider, though, that these
+counts should are expected to be different because e.g.: Vienna is the biggest state
+so we expect a lot of donors.
+
+```{r}
+donors_per_state <- customer_segmentation_first_prepro %>%
+  select(Bundesland) %>%
+  group_by(Bundesland) %>%
+  count() %>%
+  ungroup()
+  
+ggplot(donors_per_state, aes(Bundesland, n)) +
+  geom_col(fill = "#76B856")
+```
+
+When adjusting the counts to represent donors per 100,000 inhabitants we see an
+over representation of Lower Austria and an under representation of Vorarlberg and
+Vienna.
 
 ```{r}
 # taken from https://de.statista.com/statistik/daten/studie/75396/umfrage/entwicklung-der-bevoelkerung-in-oesterreich-nach-bundesland-seit-1996/
@@ -287,11 +287,7 @@ pop_salzburg <- 560643
 pop_vorarlberg <- 399164
 pop_burgenland <- 296040
 
-donors_per_state_per_100_000_inhabitants <- customer_segmentation_first_prepro %>%
-  select(Bundesland) %>%
-  group_by(Bundesland) %>%
-  count() %>%
-  ungroup() %>%
+donors_per_state_per_100_000_inhabitants <- donors_per_state %>%
   mutate(
     n = case_when(
       Bundesland == "B" ~ n / pop_burgenland * 100000,
@@ -307,33 +303,110 @@ donors_per_state_per_100_000_inhabitants <- customer_segmentation_first_prepro %
   )
 
 ggplot(donors_per_state_per_100_000_inhabitants, aes(Bundesland, n)) +
-  geom_col()
+  geom_col(fill = "#76B856")
 ```
 
+Looking at the donation sums we see a similar behavior as we have seen with the counts.
+The last visual analysis should have proven to us that this trivial example is not
+very useful.
+
 ```{r}
-ggplot(customer_segmentation_first_prepro, aes(days_since_last_payment)) +
-  geom_histogram(binwidth = 30)
+sums_per_state <- customer_segmentation_first_prepro %>%
+  group_by(Bundesland) %>%
+  summarize(sum_donations = sum(SUMtotal)) %>%
+  ungroup()
+
+ggplot(sums_per_state, aes(Bundesland, sum_donations)) +
+  geom_col(fill = "#76B856")
+```
+
+Interestingly, when we look at the sums per inhabitant of a state we see an over
+representation of Viennese money while Vorarlberg is even less present.
+
+```{r}
+sums_per_state_per_inhabitant <- sums_per_state %>%
+  mutate(
+    sum_donations = case_when(
+      Bundesland == "B" ~ sum_donations / pop_burgenland,
+      Bundesland == "K" ~ sum_donations / pop_carithia,
+      Bundesland == "N" ~ sum_donations / pop_lower_austria,
+      Bundesland == "O" ~ sum_donations / pop_upper_austria,
+      Bundesland == "Sa" ~ sum_donations / pop_salzburg,
+      Bundesland == "St" ~ sum_donations / pop_styria,
+      Bundesland == "T" ~ sum_donations / pop_tyrol,
+      Bundesland == "V" ~ sum_donations / pop_vorarlberg,
+      Bundesland == "W" ~ sum_donations / pop_vienna
+    )
+  )
+
+ggplot(sums_per_state_per_inhabitant, aes(Bundesland, sum_donations)) +
+  geom_col(fill = "#76B856")
+```
+
+If we want to be even more precise when targeting potential donors we could even
+adjust the sums by the spending power in each state in respect to the one with the
+highest spending power (Lower Austria). Looking at this graph we might want to
+look into Tyrol, Vorarlberg and Vienna. While Tyrol and Vienna are appearing to
+be rather over represented in respect to money donated Vorarlberg appears to be
+seriously underserviced.
+
+```{r}
+# taken from https://de.statista.com/statistik/daten/studie/373051/umfrage/kaufkraft-je-einwohner-in-oesterreich-nach-bundeslaendern/
+kaufkraft_vienna <- 22659
+kaufkraft_lower_austria <- 25615
+kaufkraft_upper_austria <- 24728
+kaufkraft_styria <- 23981
+kaufkraft_tyrol <- 23579
+kaufkraft_carithia <- 23833
+kaufkraft_salzburg <- 24685
+kaufkraft_vorarlberg <- 25535
+kaufkraft_burgenland <- 24919
+
+sums_per_state_per_inhabitant_adjusted <- sums_per_state_per_inhabitant %>%
+  mutate(
+    sum_donations = case_when(
+      Bundesland == "B" ~ sum_donations * (1 / (kaufkraft_burgenland / kaufkraft_lower_austria)),
+      Bundesland == "K" ~ sum_donations * (1 / (kaufkraft_carithia / kaufkraft_lower_austria)),
+      Bundesland == "N" ~ sum_donations,
+      Bundesland == "O" ~ sum_donations * (1 / (kaufkraft_upper_austria / kaufkraft_lower_austria)),
+      Bundesland == "Sa" ~ sum_donations * (1 / (kaufkraft_salzburg / kaufkraft_lower_austria)),
+      Bundesland == "St" ~ sum_donations * (1 / (kaufkraft_styria / kaufkraft_lower_austria)),
+      Bundesland == "T" ~ sum_donations * (1 / (kaufkraft_tyrol / kaufkraft_lower_austria)),
+      Bundesland == "V" ~ sum_donations * (1 / (kaufkraft_vorarlberg / kaufkraft_lower_austria)),
+      Bundesland == "W" ~ sum_donations * (1 / (kaufkraft_vienna / kaufkraft_lower_austria))
+    )
+  )
+
+ggplot(sums_per_state_per_inhabitant_adjusted, aes(Bundesland, sum_donations)) +
+  geom_col(fill = "#76B856")
 ```
 
 ### RFM
 
-RFM segments customers according to three variabless: Recency, Frequency, Monetary Value. Using the `rfm` package, RFM scores can be computed either on raw transaction data (one row per transaction), or on aggregated customer data (one row per customer). For the former, the method `rfm_table_order` can be used, for the latter either `rfm_table_customer` or `rfm_table_customer2`. Since our dataset represents aggregated customer data, the latter should be used. It can be computed directly from the raw data upon adding the two variables `SUMtotal` and `COUNTtotal`:
-
+RFM segments customers according to three variabless: Recency, Frequency,
+Monetary Value. Using the `rfm` package, RFM scores can be computed either on
+raw transaction data (one row per transaction), or on aggregated customer data
+(one row per customer). For the former, the method `rfm_table_order` can be
+used, for the latter either `rfm_table_customer` or `rfm_table_customer2`.
+Since our data set represents aggregated customer data, the latter should be
+used. It can be computed directly from the raw data upon adding the two
+variables `SUMtotal` and `COUNTtotal`:
 
 ```{r}
-library(rfm)
-
 rfm_scores <- customer_segmentation_raw %>%
+  
   # create new variables: total donation sum; total number of donations
   mutate(SUMtotal = SUM2015 + SUM2016 + SUM2017 + SUM2018 + SUM2019,
          COUNTtotal = COUNT2015 + COUNT2016 + COUNT2017 + COUNT2018 + COUNT2019,
          LastPaymentDate = as.Date(LastPaymentDate)) %>%
+  
   # compute RFM scores
   rfm_table_customer_2(customer_id = ID,
                        n_transactions = COUNTtotal,
                        latest_visit_date = LastPaymentDate,
                        total_revenue = SUMtotal,
                        analysis_date = reference_date)
+
 rfm_scores
 ```
 
@@ -345,8 +418,6 @@ rfm_scores_on_prepro <- customer_segmentation_first_prepro %>%
                        total_revenue = SUMtotal, 
                        analysis_date = reference_date)
 
-
-
 rfm_results_on_prepro <- rfm_scores_on_prepro$rfm %>% as.data.frame()
 
 first_prepro_with_rfm_results <- merge(x = customer_segmentation_first_prepro,
@@ -357,21 +428,38 @@ first_prepro_with_rfm_results <- merge(x = customer_segmentation_first_prepro,
 first_prepro_with_rfm_results
 ```
 
-
-Visual inspection of RFM scores:
+### Visual inspection of RFM scores:
 
 ```{r}
 rfm_heatmap(rfm_scores)
 ```
 
-In the above heatmap, we can see some interesting patterns (**Note:** The higher the recency score, the more recent the last donation):
+In the above heatmap, we can see some interesting patterns (**Note:** The higher
+the recency score, the more recent the last donation):
 
-- Higher monetary values are characterized by higher donation frequencies and more recent donations. There is an obvious cluster of low monetary value for frequency values in [1,2] and recency in [1,3]. These might be **lost donors**, i.e. customers who donated only a few times, who have not donated in a while and are thus unlikely do donate again in the future.
-- In the upper left corner, we see very recent customers with low frequency (i.e. new donors) who donated sums above average for this recency score. It might be worth focusing on them, since they recently demonstrated above-average donation willingness. This segment may be called **prospects**.
-- In the upper right corner, we can identify frequent and recent donors who donated high sums - these are our **donation champions**.
-- At the lower right (frequency in [5,5], recency in [1,3]) we see donors who frequently donated high sums in the past, but who have not been active recently. Their past donation behaviour indicates high donation willingness, so we should try to reactive them as donors, because we **do not want to loose** them. However, prior to contacting them, we should check whether these donors are still alive, because in the EDA we have seen that there are some very old donors, who might have passed away in the meantime, which would explain the lack of recent donation activity.
+- Higher monetary values are characterized by higher donation frequencies and
+  more recent donations. There is an obvious cluster of low monetary value for
+  frequency values in [1,2] and recency in [1,3]. These might
+  be **lost donors**, i.e. customers who donated only a few times, who have not
+  donated in a while and are thus unlikely do donate again in the future.
+- In the upper left corner, we see very recent customers with low frequency
+  (i.e. new donors) who donated sums above average for this recency score. It
+  might be worth focusing on them, since they recently demonstrated
+  above-average donation willingness. This segment may be called **prospects**.
+- In the upper right corner, we can identify frequent and recent donors who
+  donated high sums - these are our **donation champions**.
+- At the lower right (frequency in [5,5], recency in [1,3]) we see donors who
+  frequently donated high sums in the past, but who have not been active
+  recently. Their past donation behaviour indicates high donation willingness,
+  so we should try to reactive them as donors, because
+  we **do not want to loose** them. However, prior to contacting them, we should
+  check whether these donors are still alive, because in the EDA we have seen
+  that there are some very old donors, who might have passed away in the
+  meantime, which would explain the lack of recent donation activity.
 
-There are further, less obvious customer segments in the heatmap. For the sake of clarity, rather than verbally describing the segments, below we visually represent the customer segments we believe to have identified in the heatmap: 
+There are further, less obvious customer segments in the heatmap. For the sake
+of clarity, rather than verbally describing the segments, below we visually
+represent the customer segments we believe to have identified in the heatmap: 
 
 ```{r, fig.width=4, fig.height=4}
 # define data frame with frequency and recency score thresholds for each segment 
@@ -392,11 +480,14 @@ ggplot(heatmap_segments_df, aes(x, y, label = lab)) +
   geom_rect(aes(xmin = 0, xmax = 1, ymin = 4, ymax = 5), fill = "cyan", alpha = 0.1) +
   geom_rect(aes(xmin = 3, xmax = 5, ymin = 3, ymax = 5), fill = "magenta", alpha = 0.1) +
   geom_text(size=3)
-
 ```
 
-
-The `rfm_segment` method can be used to assign donors to a given segment based on their RFM scores. To this end, the upper and lower bounds of recency, frequency and monetary scores for each segment, as well as the respective segment names, need to be defined. However, the code below throws an error, so probably there is a bug in the definition of the lower/upper segment bounds. **ToDo: Fix the bug, or remove this**.
+The `rfm_segment` method can be used to assign donors to a given segment based
+on their RFM scores. To this end, the upper and lower bounds of recency,
+frequency and monetary scores for each segment, as well as the respective
+segment names, need to be defined. However, the code below throws an error, so
+probably there is a bug in the definition of the lower/upper segment
+bounds. **ToDo: Fix the bug, or remove this**.
 
 ```{r eval=FALSE, include=FALSE}
 segment_names_custom <- c("Champs", "Regular average active", "Prospect", "Newcomer",
@@ -418,8 +509,11 @@ segment_2 <- rfm_segment(rfm_scores, segment_names = segment_names_custom,
                        monetary_upper_2)
 ```
 
-As an alternative to `rfm_segment`, segments can be assigned to donors with the help of hand-crafted if-else-rules. However, this segmentation is not useful, because it yields a very high number of donors belonging to the `other` segment (approx. 25%). The reason for this is probably the aforementioned error in the definition of the upper/lower segment bounds. 
-
+As an alternative to `rfm_segment`, segments can be assigned to donors with the
+help of hand-crafted if-else-rules. However, this segmentation is not useful,
+because it yields a very high number of donors belonging to the `other` segment
+(approx. 25%). The reason for this is probably the aforementioned error in the
+definition of the upper/lower segment bounds. 
 
 ```{r}
 rfm_segments <- rfm_scores$rfm %>% 
@@ -438,22 +532,30 @@ rfm_segments <- rfm_scores$rfm %>%
                           ifelse(recency_score %in% 1:3 & frequency_score %in% 1:2 & monetary_score %in% 1:2,
                           "Lost", "Other"))))))))
 
-
-rfm_segments %>% ggplot(aes(segment)) +
+rfm_segments %>%
+  ggplot(aes(segment)) +
   geom_bar()
-
-rfm_segments$segment %>% table() %>% prop.table() %>% round(3) %>% sort(decreasing = T)
-
-
-
 ```
 
+```{r}
+rfm_segments$segment %>%
+  table() %>%
+  prop.table() %>%
+  round(3) %>%
+  sort(decreasing = T)
+```
 
 ```{r}
-other_peeps <- rfm_segments %>% filter(segment == "Other") %>% select(customer_id) %>% unique() %>% list()
+other_peeps <- rfm_segments %>%
+  filter(segment == "Other") %>%
+  select(customer_id) %>%
+  unique() %>%
+  (function (x) x$customer_id)
 
 first_prepro_with_rfm_results %>% filter(ID %in% other_peeps)
+```
 
+```{r}
 # these are the same categories as above, just using the first_prepro data instead of the raw data 
 first_prepro_with_rfm_segments <- first_prepro_with_rfm_results %>% 
   mutate(segment = ifelse(recency_score %in% 4:5 & frequency_score %in% 4:5 & monetary_score %in% 4:5,
@@ -470,26 +572,30 @@ first_prepro_with_rfm_segments <- first_prepro_with_rfm_results %>%
                           "Regular avg at risk", 
                           ifelse(recency_score %in% 1:3 & frequency_score %in% 1:2 & monetary_score %in% 1:2,
                           "Lost", "Other"))))))))
+
+first_prepro_with_rfm_segments
 ```
 
-As assumed, We're indeed not covering everything here. E.g. somebody with recency score 4 and frequency score 1 is automatically classified as "other", regardless of monetary value. But that person could easily be a "Prospect" or "Newbie". It might therefore be wise to use the bounds recommended by introductions to rfm.
-
+As assumed, We're indeed not covering everything here. E.g. somebody with recency
+score 4 and frequency score 1 is automatically classified as "other", regardless
+of monetary value. But that person could easily be a "Prospect" or "Newbie".
+It might therefore be wise to use the bounds recommended by introductions to rfm.
 
 ```{r}
 first_prepro_with_rfm_segments %>% filter(segment == "Other") %>% 
   ggplot(aes(frequency_score, recency_score)) +
   geom_tile(aes(fill = monetary_score), colour = "white") +
-  scale_fill_distiller(palette = "PuBu", direction = +1)+
-  labs(title="heatmap only on those classified as OTHER in Michael's first try")+
+  scale_fill_distiller(palette = "PuBu", direction = +1) +
+  labs(title="heatmap only on those classified as OTHER in Michael's first try") +
   theme_minimal()
-
 ```
 
 The above heatmap shows that we e.g. missed a lot of "big donors" in the first attempt.
 
-
-
-To remedy the faulty segmentation shown above, we resort to the customer segments (and the respective RFM score thresholds) presented in class (see slide deck of first class, p. 82 as well as https://rpubs.com/Eddie_Zaldivar/705462). We use this mainstream segmentation as our baseline:
+To remedy the faulty segmentation shown above, we resort to the customer
+segments (and the respective RFM score thresholds) presented in class (see slide
+deck of first class, p. 82 as well as [here](https://rpubs.com/Eddie_Zaldivar/705462).
+We use this mainstream segmentation as our baseline:
 
 ```{r}
 # define name of each segment
@@ -515,8 +621,6 @@ rfm_segments_baseline <- rfm_segment(rfm_scores,
                                      monetary_lower,
                                      monetary_upper)
 
-rfm_segments_baseline$segment %>% table()
-
 # inspect segment assignment
 head(rfm_segments_baseline)
 ```
@@ -534,9 +638,6 @@ rfm_segments_baseline_on_prepro <- rfm_segment(rfm_scores_on_prepro,
                                      monetary_lower,
                                      monetary_upper)
 
-rfm_segments_baseline_on_prepro
-customer_segmentation_first_prepro
-
 # merge with prepro_data
 rfm_results_baseline_on_prepro <- merge(x = customer_segmentation_first_prepro,
            y = rfm_segments_baseline_on_prepro,
@@ -547,18 +648,29 @@ rfm_results_baseline_on_prepro <- merge(x = customer_segmentation_first_prepro,
 head(rfm_results_baseline_on_prepro)
 ```
 
-The mainstream customer segmentation is better as our own approach since it yields much less `other` instances (only approximately 6.3% of donors are assigned to this segment):
+The mainstream customer segmentation is better as our own approach since it
+yields much less `other` instances (only approximately 6.3% of donors are
+assigned to this segment):
 
 ```{r}
 rfm_results_baseline_on_prepro %>% ggplot(aes(segment)) + 
   geom_bar()
-rfm_results_baseline_on_prepro$segment %>% table() %>% prop.table() %>% round(2) %>% sort(decreasing = T)
 ```
 
-
+```{r}
+rfm_results_baseline_on_prepro$segment %>%
+  table() %>%
+  prop.table() %>%
+  round(2) %>%
+  sort(decreasing = T)
+```
 
 ```{r}
-rfm_results_baseline_on_prepro$segment %>% table() %>% prop.table() %>% round(3) %>% sort(decreasing = T)
+rfm_results_baseline_on_prepro$segment %>%
+  table() %>%
+  prop.table() %>%
+  round(3) %>%
+  sort(decreasing = T)
 ```
 
 Finally, we can inspect median scores for each RFM component per segment:
@@ -567,29 +679,10 @@ Finally, we can inspect median scores for each RFM component per segment:
 rfm_plot_median_recency(rfm_results_baseline_on_prepro)
 ```
 
-
 ```{r}
 rfm_plot_median_frequency(rfm_results_baseline_on_prepro)
 ```
 
-
 ```{r}
 rfm_plot_median_monetary(rfm_results_baseline_on_prepro)
 ```
-
-#### clean-up 
-
-```{r}
-rm(customer_segmentation_complete,
-   customer_segmentation_raw, 
-   customer_segmentation_with_zip,
-   customers_prep,
-   donors_per_state_per_100_000_inhabitants,
-   other_peeps,
-   rfm_scores,
-   rfm_scores_on_prepro,
-   rfm_segments,
-   rfm_segments_baseline,
-   zip_code_list)
-```
-

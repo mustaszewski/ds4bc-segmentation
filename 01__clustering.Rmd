@@ -1,59 +1,81 @@
 ---
-title: "01_clustering"
-author: "EmanuelGregorMichaelPeter"
-date: "10 12 2021"
-output: html_document
+title: "Clustering"
+author:
+  - "Aichinger-Fankhauser Peter"
+  - "Beyerle Gregor"
+  - "Reckmeyer Emanuel Elias"
+  - "Ustaszewski Michael"
+date: "2021-12-30"
+output:
+  html_document:
+    df_print: paged
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
+source("code/dataset.R")
 
+library(tidymodels)
+library(factoextra)
+library(corrplot)
+library(Rmisc)
 
-```{r, include=FALSE}
-# Here, we render the exploration file to load all necessary variables into our environment
-# This will take a minute (all plots etc are created again)
-rmarkdown::render("00__exploration.Rmd")
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```
 
 ## Clustering
 
-For the clustering (no matter whether optics, kmeans, hiearchical), we need to define a strategy to deal with missing values. We decided to take two approaches: (a) drop all records containing missing values, (b) drop the variables containing many missing values (i.e. age-related variables). Then we can compare both results.
+For the clustering (no matter whether optics, kmeans, hiearchical), we need to
+define a strategy to deal with missing values. We decided to take two approaches:
 
-However, some variables will have to be excluded anyway, because they were either used to extract other features or are per se not useful for our purpose.
+  (a) drop all records containing missing values,
+  (b) drop the variables containing many missing values (i.e. age-related variables).
+  
+Then we can compare both results.
+
+However, some variables will have to be excluded anyway, because they were either
+used to extract other features or are per se not useful for our purpose.
+
 ```{r}
-variables_to_exclude = c("ID", # no useful information
-                        "Postcode", # to many attributes 
-                        "MERCHANDISE2015", # merchandise_any might be enough because it is a rare category anyway
-                        "MERCHANDISE2016",
-                        "MERCHANDISE2017",
-                        "MERCHANDISE2018",
-                        "MERCHANDISE2019",
-                        "COUNT2015", # expressed in COUNTtotal and COUNTaverage
-                        "COUNT2016",
-                        "COUNT2017",
-                        "COUNT2018",
-                        "COUNT2019", 
-                        "SUM2015", # expressed in SUMtotal and SUMaverage
-                        "SUM2016",
-                        "SUM2017",
-                        "SUM2018",
-                        "SUM2019",
-                        "LastPaymentDate", # expressed in days_since_last_payment,
-                        "LastPaymentYEAR",
-                        "Ort", # same as postal code
-                        "year_born", # expressed in age_at_last_donation
-                        "LastPaymentMONTH", # expressed in days_since_last_payment
-                        "PenultimatePaymentMONTH", # expressed in donation_interval
-                        "PenultimatePaymentYEAR", # expressed in donation_interval
-                        "age_at_last_donation" # expressed in generation_monikert
-                        )
+variables_to_exclude <- c(
+  "ID", # no useful information
+  "Postcode", # to many attributes 
+  "MERCHANDISE2015", # merchandise_any might be enough because it is a rare category anyway
+  "MERCHANDISE2016",
+  "MERCHANDISE2017",
+  "MERCHANDISE2018",
+  "MERCHANDISE2019",
+  "COUNT2015", # expressed in COUNTtotal and COUNTaverage
+  "COUNT2016",
+  "COUNT2017",
+  "COUNT2018",
+  "COUNT2019",
+  "SUM2015", # expressed in SUMtotal and SUMaverage
+  "SUM2016",
+  "SUM2017",
+  "SUM2018",
+  "SUM2019",
+  "LastPaymentDate", # expressed in days_since_last_payment,
+  "LastPaymentYEAR",
+  "Ort", # same as postal code
+  "year_born", # expressed in age_at_last_donation
+  "LastPaymentMONTH", # expressed in days_since_last_payment
+  "PenultimatePaymentMONTH", # expressed in donation_interval
+  "PenultimatePaymentYEAR", # expressed in donation_interval
+  "age_at_last_donation" # expressed in generation_monikert
+)
 ```
 
 Check remaining features: 
+
 ```{r}
+customer_segmentation_first_prepro <- get_preprocessed_data(
+  "data/customer_segmentation_test.csv",
+  "data/PLZ_Verzeichnis-20211201.xlsx"
+)
+
 df_without_variables_to_exlude <- customer_segmentation_first_prepro %>%
   select(-all_of(variables_to_exclude))
+
 df_without_variables_to_exlude %>% colnames()
 ```
 
@@ -61,18 +83,20 @@ df_without_variables_to_exlude %>% colnames()
 # approach a)
 df_without_na <- df_without_variables_to_exlude %>% drop_na()
 df_without_na %>% nrow() # 242480 cases
+```
 
+```{r}
 # approach b)
 df_with_fewer_vars <- df_without_variables_to_exlude %>% 
   select(-c(generation_moniker, donation_interval)) %>% 
   drop_na()
+
 df_with_fewer_vars %>% nrow() # 396694 cases
 ```
 
 Also, it is necessary to dummy-code nominal variables, and to scale numeric variables.
 
 ```{r}
-library(tidymodels)
 df_without_na_prep <- df_without_na %>% recipe() %>% 
   step_scale(all_numeric()) %>%
   step_dummy(all_nominal()) %>%
@@ -84,20 +108,18 @@ df_with_fewer_vars_prep <- df_with_fewer_vars %>% recipe() %>%
   step_dummy(all_nominal()) %>%
   prep() %>% 
   bake(new_data = NULL)
-
 ```
 
-### kmeans
+### K-MEANS
+
 **Approach A**
+
 ```{r}
 set.seed(123)
 
-gc() # garbage collection to improve performance
-
-
 max_k = 10
 
-kmeans_clust_a <- 
+kmeans_clust_a <-
   tibble(k = 1:max_k) %>%
   mutate(
     kclust = map(k, ~kmeans(df_without_na_prep, .x)),
@@ -106,19 +128,15 @@ kmeans_clust_a <-
     augmented = map(kclust, augment, df_without_na_prep)
   )
 
-clusterings_a <- 
+clusterings_a <-
   kmeans_clust_a %>%
   unnest(cols = c(glanced))
-
 ```
 
-
 **Approach B**
+
 ```{r}
 set.seed(123)
-
-
-gc() # garbage collection to improve performance
 
 max_k = 10
 
@@ -136,56 +154,54 @@ clusterings_b <-
   unnest(cols = c(glanced))
 ```
 
-
-
-
 **Choosing optimal number of clusters**
+
 ```{r}
 # look at total within sum of squares 
 ggplot(clusterings_a, aes(k, tot.withinss)) +
   geom_line() +
-  geom_point()+
-  scale_x_discrete(limits = seq(1:10))+
+  geom_point() +
+  scale_x_discrete(limits = seq(1:10) %>% as_factor()) +
   labs(title = "approach a)")
-
-ggplot(clusterings_b, aes(k, tot.withinss)) +
-  geom_line() +
-  geom_point()+
-  scale_x_discrete(limits = seq(1:10))+
-  labs(title = "approach b)")
-
 ```
 
-According to the elbow method, the above plot suggests that `k=5` is the optimal $k$ for approach a). Using this information, we can cluster the data using `k=5`.
-For b), `k=4` is the optimal $k$. 
+```{r}
+ggplot(clusterings_b, aes(k, tot.withinss)) +
+  geom_line() +
+  geom_point() +
+  scale_x_discrete(limits = seq(1:10) %>% as_factor()) +
+  labs(title = "approach b)")
+```
+
+According to the elbow method, the above plot suggests that `k=5` is the
+optimal $k$ for approach a). Using this information, we can cluster the data
+using `k=5`. For b), `k=4` is the optimal $k$. 
 
 ```{r}
 kclust_a_k5 <- kmeans(df_without_na_prep, centers = 5)
 kclust_b_k4 <- kmeans(df_with_fewer_vars_prep, centers = 4)
-
-#TODO: Assign clusters to raw data
 ```
-
 
 ### Assigning clusters to raw data
 
 ```{r}
-#kclust_a_k5 %>% attributes()
 kmeans_results_a <- cbind(df_without_na, cluster = kclust_a_k5$cluster) %>% 
-  select(cluster, everything())
-kmeans_results_b <- cbind(df_with_fewer_vars, cluster = kclust_b_k4$cluster) %>% 
   select(cluster, everything())
 
 kmeans_results_a %>% head()
-kmeans_results_b %>% head()
 ```
 
+```{r}
+kmeans_results_b <- cbind(df_with_fewer_vars, cluster = kclust_b_k4$cluster) %>% 
+  select(cluster, everything())
+
+kmeans_results_b %>% head()
+```
 
 ### Visualise Clusters using PCA
 
 ```{r}
 # compute PCA
-library(factoextra)
 pca_res_a <- prcomp(df_without_na_prep, scale = TRUE)
 pca_res_b <- prcomp(df_with_fewer_vars_prep, scale= TRUE)
 ```
@@ -199,7 +215,9 @@ fviz_pca_ind(pca_res_a,
              habillage = kclust_a_k5$cluster, # color data points by k-means cluster
              addEllipses = TRUE) + # add concentration ellipses
   scale_color_brewer(palette = "Set1") # change color palette for readability
+```
 
+```{r}
 fviz_pca_ind(pca_res_b,
              axes = c(1,2),
              geom.ind = c("point"),
@@ -209,15 +227,19 @@ fviz_pca_ind(pca_res_b,
   scale_color_brewer(palette = "Set1")
 ```
 
-Let's check how much variance is explained by the PCs: We see that 18 (out of 24 variables) dimensions are needed to explain ~ 95% of the variance. The first three PCs explain 28% of the variance in approach a) and 25% in approach b), which is not overwhelming. 
+Let's check how much variance is explained by the PCs: We see that 18 (out of
+24 variables) dimensions are needed to explain ~ 95% of the variance. The first
+three PCs explain 28% of the variance in approach a) and 25% in approach b), which
+is not overwhelming. 
 
 ```{r}
 # compute variance explained by each principal component a)
-get_eigenvalue(pca_res_a)  %>% round(1)
+get_eigenvalue(pca_res_a) %>% round(1)
 ```
+
 ```{r}
 # compute variance explained by each principal component a)
-get_eigenvalue(pca_res_b)  %>% round(1)
+get_eigenvalue(pca_res_b) %>% round(1)
 ```
 
 The bar plot below shows the above table in visual form, so it adds no further insights.
@@ -227,56 +249,78 @@ The bar plot below shows the above table in visual form, so it adds no further i
 fviz_eig(pca_res_a,
          choice = "variance",
          ncp=20,
-         addlabels = T)+
+         addlabels = T) +
   labs(title = "Scree plot - approach a)")
+```
+
+```{r}
 fviz_eig(pca_res_b,
          choice = "variance",
          ncp=20,
-         addlabels = T)+
+         addlabels = T) +
   labs(title = "Scree plot - approach b)")
 ```
 
-To understand which variables are associated with the PCA dimensions, we inspect the variable correlation circle. 
+To understand which variables are associated with the PCA dimensions, we inspect
+the variable correlation circle. 
 
 ```{r}
 fviz_pca_var(pca_res_a,
              axes = c(1,2),
-             repel = F)+ # set to TRUE to avoid overlap (not all labels are shown)
+             repel = T) + # set to TRUE to avoid overlap (not all labels are shown)
   labs(title = "Variables - PCA - approach a)")
+```
+
+```{r}
 fviz_pca_var(pca_res_b,
              axes = c(1,2),
-             repel = F)+ # set to TRUE to avoid overlap (not all labels are shown)
+             repel = T) + # set to TRUE to avoid overlap (not all labels are shown)
   labs(title = "Scree plot - approach b)")
 ```
 
 **Interpatation approach a)**
-Overlapping text makes it hard to intepret the plot; the only thing we can see clearly is that PCA dimension 2 represents gender. Thus, data points that appear in the upper part of the PCA individuals plot above are female, the ones in the lower part are male. This explains the three (or six) visually obvious clusters in the PCA plot.
 
-To better understand the association between individual variables and each PC, we can inspect a correlation plot that shows the quality of representation of each variable (`cos2`) for each dimension. High cos2 values indicate a good representation on the variable on the given PC (= variable is close to correlation circle). The plot below confirms that dimension 2 represents gender. Dimension 3 is determined by total donation sum, Dimension 4 by christmas donors.
+Overlapping text makes it hard to intepret the plot; the only thing we can see
+clearly is that PCA dimension 2 represents gender. Thus, data points that appear
+in the upper part of the PCA individuals plot above are female, the ones in the
+lower part are male. This explains the three (or six) visually obvious clusters
+in the PCA plot.
+
+To better understand the association between individual variables and each PC,
+we can inspect a correlation plot that shows the quality of representation of
+each variable (`cos2`) for each dimension. High cos2 values indicate a good
+representation on the variable on the given PC (= variable is close to
+correlation circle). The plot below confirms that dimension 2 represents gender.
+Dimension 3 is determined by total donation sum, Dimension 4 by christmas donors.
 
 
 ```{r}
-library(corrplot)
 var_a <- get_pca_var(pca_res_a)
-var_b <- get_pca_var(pca_res_b)
 corrplot(var_a$cos2, is.corr=FALSE, 
          title = "Corr plot - approach a)", 
          mar = c(0,0,1,0)) # fixes wrong positioning of title (outside of margins by default)
+```
+
+```{r}
+var_b <- get_pca_var(pca_res_b)
 corrplot(var_b$cos2, is.corr=FALSE, 
          title = "Corr plot - approach b)",
          mar = c(0,0,1,0))
-
-
 ```
 
 **Interpretation approach a):**
-Dimension 1 is represented by the variables `COUNTtotal`, `COUNTaverage`, `num_od_fonation_years`, and, to a lesser extent, `donation_interval` and `days_since_last_payment`. The variable correlation circle of the first dimension only shown below helps us understand Dimension 1 in the PCA individuals plot: Towards the right of the PCA we have donors with high total counts of donations and many donation years ("Stammkunden"), towards the left we have donors with higher values of `donation_interval`.
-
+Dimension 1 is represented by the variables `COUNTtotal`, `COUNTaverage`,
+`num_od_fonation_years`, and, to a lesser extent, `donation_interval` and
+`days_since_last_payment`. The variable correlation circle of the first dimension
+only shown below helps us understand Dimension 1 in the PCA individuals plot:
+Towards the right of the PCA we have donors with high total counts of donations
+and many donation years ("Stammkunden"), towards the left we have donors with
+higher values of `donation_interval`.
 
 ```{r}
 fviz_pca_var(pca_res_a,
              axes = c(1,1),
-             repel = T)+
+             repel = T) +
   labs(title = "Variables - PCA - approach a)")
 fviz_pca_var(pca_res_b,
              axes = c(1,1),
@@ -284,75 +328,68 @@ fviz_pca_var(pca_res_b,
   labs(title = "Variables - PCA - approach a)")
 ```
 
-
 **Multiplots**
 
-In this section we would like to take closer look at the different clusters of both approaches in order to get a better feel for the different clusters. 
+In this section we would like to take closer look at the different clusters of
+both approaches in order to get a better feel for the different clusters. 
 Let's check out the categorical variables like `Bundesland` or `Gender` first.
 
-
 ```{r}
-p1 = ggplot(data = kmeans_results_a, aes(y = cluster)) +
+p1 <- ggplot(data = kmeans_results_a, aes(y = cluster)) +
   geom_bar(aes(fill = Bundesland)) +
   ggtitle("Count of Clusters by c K5") +
   theme(plot.title = element_text(hjust = 0.5))
 
-
-p2 = ggplot(data = kmeans_results_b, aes(y = cluster)) +
+p2 <- ggplot(data = kmeans_results_b, aes(y = cluster)) +
   geom_bar(aes(fill = Bundesland)) +
   ggtitle("Count of Clusters by Bundesland K4") +
   theme(plot.title = element_text(hjust = 0.5))
 
-
-p3 = ggplot(data = kmeans_results_a, aes(y = cluster)) +
+p3 <- ggplot(data = kmeans_results_a, aes(y = cluster)) +
   geom_bar(aes(fill = Gender)) +
   ggtitle("Count of Clusters by Gender K5") +
   theme(plot.title = element_text(hjust = 0.5))
 
-
-p4 = ggplot(data = kmeans_results_b, aes(y = cluster)) +
+p4 <- ggplot(data = kmeans_results_b, aes(y = cluster)) +
   geom_bar(aes(fill = Gender)) +
   ggtitle("Count of Clusters by Gender K4") +
   theme(plot.title = element_text(hjust = 0.5))
 
-
-p5 = ggplot(data = kmeans_results_a, aes(y = cluster)) +
+p5 <- ggplot(data = kmeans_results_a, aes(y = cluster)) +
   geom_bar(aes(fill = XMAS_donor)) +
   ggtitle("Count of Clusters by XMAS_donor K5") +
   theme(plot.title = element_text(hjust = 0.5))
 
-
-p6 = ggplot(data = kmeans_results_b, aes(y = cluster)) +
+p6 <- ggplot(data = kmeans_results_b, aes(y = cluster)) +
   geom_bar(aes(fill = XMAS_donor)) +
   ggtitle("Count of Clusters by XMAS_donor K4") +
   theme(plot.title = element_text(hjust = 0.5))
 
-
-p7 = ggplot(data = kmeans_results_a, aes(y = cluster)) +
+p7 <- ggplot(data = kmeans_results_a, aes(y = cluster)) +
   geom_bar(aes(fill = merchandise_any)) +
   ggtitle("Count of Clusters by merchandise any K5") +
   theme(plot.title = element_text(hjust = 0.5))
 
-
-p8 = ggplot(data = kmeans_results_b, aes(y = cluster)) +
+p8 <- ggplot(data = kmeans_results_b, aes(y = cluster)) +
   geom_bar(aes(fill = merchandise_any)) +
   ggtitle("Count of Clusters by merchandise any K4") +
   theme(plot.title = element_text(hjust = 0.5))
 ```
 
 ```{r}
-library(Rmisc)
-multiplot(p1,p3,p5,p2,p4,p6,cols=2)
+multiplot(p1, p3, p5, p2, p4, p6, cols = 2)
 ```
 
-
 ```{r}
-multiplot(p7,p8,cols=2)
+multiplot(p7, p8, cols = 2)
 ```
 
 **Interpretation**
 
-We can see the algorithm didn't really cluster donors by any of these variables. We can therefore assume, that there are no significant differences between genders or region that could account for a higher willingness to donate. All of the information these charts provide can be found in the EDA as well.
+We can see the algorithm didn't really cluster donors by any of these variables.
+We can therefore assume, that there are no significant differences between genders
+or region that could account for a higher willingness to donate. All of the
+information these charts provide can be found in the EDA as well.
 
 ```{r}
 ggplot(data = kmeans_results_a, aes(y = cluster)) +
@@ -363,11 +400,15 @@ ggplot(data = kmeans_results_a, aes(y = cluster)) +
 
 **Clustering by generation**
 
-We only accounted for generation in Approach A, because there are a lot of missing values when it comes to age. So we excluded them in approach B.
-But we can also see that the clustering was not determined by generation or purchases of merchandise either.
-What we can see here though is that Cluster 2, which contains the biggest donors, has few Millennials in it, which was to be expected since younger people have less money to donate.
+We only accounted for generation in Approach A, because there are a lot of
+missing values when it comes to age. So we excluded them in approach B.
+But we can also see that the clustering was not determined by generation or
+purchases of merchandise either. What we can see here though is that Cluster 2,
+which contains the biggest donors, has few Millennials in it, which was to be
+expected since younger people have less money to donate.
 
-Since the categorical variables didn't generate much insight, we will take a closer look at the numerical variables.
+Since the categorical variables didn't generate much insight, we will take a
+closer look at the numerical variables.
 
 ```{r}
 plot5 <-  kmeans_results_a %>%
@@ -447,18 +488,22 @@ plot20 <-  kmeans_results_b %>%
 ```
 
 ```{r}
-multiplot(plot5,plot6,plot13,plot14,cols=2)
+multiplot(plot5, plot6, plot13, plot14, cols = 2)
 ```
 
 **SUMtotal and SUMaverage**
 
-These plots are a bit harder to read and the scale is rather large with most of the donations being so small. So these numbers have been put on a log scale, which improves readability. You can see that A has the the best donors in Cluster 2,3 and 4 when it comes to the amount of money donated. While 5 and 1 are low.
+These plots are a bit harder to read and the scale is rather large with most of
+the donations being so small. So these numbers have been put on a log scale,
+which improves readability. You can see that A has the the best donors in
+Cluster 2, 3 and 4 when it comes to the amount of money donated. While 5 and 1
+are low.
 
-Approach B has the best donors in Cluster 3 and 2. Cluster 2 and 4 both have a wide spread and are on the lower end.
-
+Approach B has the best donors in Cluster 3 and 2. Cluster 2 and 4 both have a
+wide spread and are on the lower end.
 
 ```{r}
-multiplot(plot7,plot8,plot15,plot16,cols=2)
+multiplot(plot7, plot8, plot15, plot16, cols = 2)
 ```
 
 **COUNTaverage and COUNTtotal**
@@ -468,50 +513,88 @@ All the other clusters are actually rather similar in count and average for Appr
 For A you have Cluster 5 as the "one timers". 1,3 and 4 are quite close.
 
 ```{r}
-multiplot(plot9,plot17,cols=1)
+multiplot(plot9, plot17, cols = 1)
 ```
 
 **Days since payment**
 
-Days since payment shows a clearer picture. A has Cluster 1 where the last payment has been a while ago. Same in Cluster 2 for Approach B.
+Days since payment shows a clearer picture. A has Cluster 1 where the last
+payment has been a while ago. Same in Cluster 2 for Approach B.
 
 ```{r}
-multiplot(plot11,plot12,plot19,cols=2)
+multiplot(plot11, plot12, plot19, cols = 2)
 ```
 
 **Number of donations in a year**
 
-This one is very interesting. Although the plot is not ideal for this variable, it shows how Cluster A5 has the "one timers" in it. A2 has between 1 and 5 donations a year so it doesn't just contain the big donors, but also the frequent spenders. It would be interesting to take a closer look at the once a year donors in A2 and see if those come from inheritances.
-B1 has has no "once a year" donors in it, while B3 is similar to A2.
+This one is very interesting. Although the plot is not ideal for this variable,
+it shows how Cluster A5 has the "one timers" in it. A2 has between 1 and 5
+donations a year so it doesn't just contain the big donors, but also the frequent
+spenders. It would be interesting to take a closer look at the once a year
+donors in A2 and see if those come from inheritances. B1 has has no "once a year"
+donors in it, while B3 is similar to A2.
 
 **Conclusions**
 
-Looking at the plots above, we can tell that the clustering with 5 clusters manages to separate the donors a bit more clearly in some regards than approach B with 4 clusters. The demographic variables aren't as meaningful as one might expect, although age is relevant. Other demographic variables like income and level of education would have been interesting but are not contained in this data set.
+Looking at the plots above, we can tell that the clustering with 5 clusters
+manages to separate the donors a bit more clearly in some regards than approach
+B with 4 clusters. The demographic variables aren't as meaningful as one might
+expect, although age is relevant. Other demographic variables like income and
+level of education would have been interesting but are not contained in this data set.
 
-We will try and categorize the clusters in approach A to determine which groups should be focused on in our marketing efforts. Afterwards we will compare the results of KMeans with those of RFM.
+We will try and categorize the clusters in approach A to determine which groups
+should be focused on in our marketing efforts. Afterwards we will compare the
+results of KMeans with those of RFM.
 
 **A2 - The Lonely Heroes**
 
-These donors are donating the most in total, they also donate very frequently. If we look at the outliers when it comes to the amounts donated, we can safely assume that there are inheritances contained in this group. This assumption is supported by the generational charts above. A2 contains mostly people that would be considered the "silent" generation and the "boomers". This makes sense, if we look at wealth distributions because older people generally have more money saved up. This cluster also contains the fewest families, which also supports this.
+These donors are donating the most in total, they also donate very frequently. If
+we look at the outliers when it comes to the amounts donated, we can safely assume
+that there are inheritances contained in this group. This assumption is supported
+by the generational charts above. A2 contains mostly people that would be
+considered the "silent" generation and the "boomers". This makes sense, if we
+look at wealth distributions because older people generally have more money saved
+up. This cluster also contains the fewest families, which also supports this.
 
-These old donors are very important and should be treated accordingly. They donate considerable amounts and might bequeath their capital upon death.
+These old donors are very important and should be treated accordingly. They
+donate considerable amounts and might bequeath their capital upon death.
 
 **A5 - The One Timers**
 
-This cluster contains one time donors. They donate small amounts and don't come back. They also don't buy any merchandise. 
-It would be interesting to see how they can be convinced in the first place and why they only donated once. This would be market research though. Trying to convince a sizable chunk of this cluster to donate more would be difficult without further research. Luckily this is the smallest cluster
+This cluster contains one time donors. They donate small amounts and don't come
+back. They also don't buy any merchandise. It would be interesting to see how
+they can be convinced in the first place and why they only donated once. This
+would be market research though. Trying to convince a sizable chunk of this
+cluster to donate more would be difficult without further research. Luckily this
+is the smallest cluster
 
 **A3/A4 - The (Wo)Men In The Middle**
 
-These groups donate middle to high amounts in regular intervals. They might contain donors with donation plans. These are already in the system and generate a good portion of donations. They do buy merchandise as well. With these it would make sense to ensure that we keep in touch. If any of these people stop to donate in the regular interval we should approach them and inquire about the reason. Especially A3 contains a lot of christmas donors and millenials.
+These groups donate middle to high amounts in regular intervals. They might
+contain donors with donation plans. These are already in the system and generate
+a good portion of donations. They do buy merchandise as well. With these it would
+make sense to ensure that we keep in touch. If any of these people stop to donate
+in the regular interval we should approach them and inquire about the reason.
+Especially A3 contains a lot of christmas donors and millenials.
 
 **A1 - The Long Inbetweeners**
 
-This group seems to be a bit of a left over group. They don't particularly stand out in any way, except that they do donate frequently but with long periods between donations. They buy merch an contain the most families respectively.
+This group seems to be a bit of a left over group. They don't particularly stand
+out in any way, except that they do donate frequently but with long periods
+between donations. They buy merch an contain the most families respectively.
 
-# RFM vs. KMeans
+## RFM vs. KMeans
 
-The data set doesn't contain many demographic variables and most of the data is centered around the donation behaviour itself, like the amounts, frequencies and intervals. KMeans did suggest a smaller amount of clusters and was a bit cumbersome to analyze and interpret. It's also significantly less intuitive than RFM.
-RFM was rather simple to set up and the names of the different groups tell you something about them right of the bat. There are more clusters in the RFM and the differences between them are more nuanced, which makes quite a lot of sense for marketing purposes. 
+The data set doesn't contain many demographic variables and most of the data is
+centered around the donation behaviour itself, like the amounts, frequencies and
+intervals. KMeans did suggest a smaller amount of clusters and was a bit
+cumbersome to analyze and interpret. It's also significantly less intuitive than RFM.
+RFM was rather simple to set up and the names of the different groups tell you
+something about them right of the bat. There are more clusters in the RFM and the
+differences between them are more nuanced, which makes quite a lot of sense for
+marketing purposes. 
 
-With this kind of data set RFM seems to be the method of choice. It's quick and simple and the risk of data snooping is comparably low. If the data set would contain more demographic data KMeans would make sense, but it requires a big amount of knowledge and reasoning.
+With this kind of data set RFM seems to be the method of choice. It's quick and
+simple and the risk of data snooping is comparably low. If the data set would
+contain more demographic data KMeans would make sense, but it requires a big
+amount of knowledge and reasoning.
